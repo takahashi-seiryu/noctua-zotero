@@ -24,7 +24,7 @@ jobs:
     name: pr-title
     runs-on: ubuntu-latest
     steps:
-      - name: Check the PR title follows "<type>: <summary>"
+      - name: Check the PR title format
         env:
           TITLE: ${{ github.event.pull_request.title }}
         run: |
