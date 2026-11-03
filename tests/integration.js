@@ -671,6 +671,11 @@ print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK pa
           canvas.getContext("2d").drawWindow(mainWindow,0,0,canvas.width,canvas.height,"white");
           const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
           await IOUtils.write(PathUtils.join(PathUtils.parent(Zotero.Prefs.get("extensions.noctua-notes.testResult",true)),"readerview.png"),new Uint8Array(await blob.arrayBuffer()));}
+        {const other=sidenav.querySelector('.highlight-notes-inactive .btn:not([data-pane="context-notes"])');
+          assert(other,"Zotero's own side bar buttons were not found");
+          other.click();
+          assert(deck.selectedPanel!==view&&!wrapper.classList.contains("highlight"),"Pressing one of Zotero's own buttons should leave the chat");
+          wrapper.querySelector(".btn").click();assert(deck.selectedPanel===view,"The chat button should open the chat again");}
         wrapper.querySelector(".btn").click();
         assert(deck.selectedPanel!==view&&!wrapper.classList.contains("highlight"),"Pressing the button again should bring the item pane back");
         mainWindow.Zotero_Tabs.close(tabID);

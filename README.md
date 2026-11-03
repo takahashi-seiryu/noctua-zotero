@@ -52,7 +52,7 @@ Noctua sources again.
 ## Right sidebar
 
 **Reading assistant.** For any paper with a PDF — in the reader or the library — the 🦉 Noctua section in
-Zotero's right-hand pane has a separate **Noctua Chat** section with its own side-nav button (the ✨ sparkles icon), below the **Noctua Notes** list. It appears only in the PDF reader's side pane (not in the library's item pane) and fills the pane's height. The chat runs the
+Zotero's right-hand pane has a separate **Noctua Chat** button (the ✨ sparkles icon) in the reader's side bar, below Zotero's yellow Notes button and set apart by its own divider. Like the Notes view, pressing it swaps the whole side pane for the chat; press it again to go back. It appears only for PDFs in the reader. (Zotero's plugin API cannot place a button there, so the plugin adds it itself; if a future Zotero changes the side bar, the chat falls back to a section in the item pane.) The chat runs the
 same Claude or Codex CLI as the note editor's assistant, with the same model/reasoning picker, attachments and
 history, but it reads the paper: the PDF's full text (with `[Page N]` markers), the metadata and your own
 highlights and comments. The note editor's assistant can read the same paper as reference while it edits a note (a setting). The reading chat has read-only tools, so it can never change the paper or your library. Scanned PDFs
