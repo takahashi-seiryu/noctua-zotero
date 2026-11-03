@@ -7,7 +7,7 @@ for the entire Noctua app. No Noctua server is required.
 ## Install and open
 
 Build with `python3 scripts/build.py`. In Zotero, choose **Tools → Plugins →
-gear → Install Plugin From File…** and select `dist/noctua-notes-0.5.0.xpi`.
+gear → Install Plugin From File…** and select `dist/noctua-notes-0.5.6.xpi`.
 The prototype targets Zotero 8–10; the local runtime check uses Zotero 10.0.7.
 Updates are manual for this draft. Zotero requires an `update_url`, so the
 manifest uses a reserved `.invalid` placeholder until a real release channel

@@ -25,6 +25,7 @@ class Element {
   setAttribute(key,value){this.attributes[key]=value;}
   addEventListener(type,handler){this.events[type]=handler;}
   all(tag){return this.children.flatMap(child=>[...(child.tag===tag?[child]:[]),...child.all(tag)]);}
+  rows(){return this.children.flatMap(child=>[...(child.attributes?.["data-noctua-open"]?[child]:[]),...child.rows()]);}
   async click(){await this.events.click?.();}
 }
 test("paper pane lists each live Noctua source separately and uses its exact source when opening",async()=>{
@@ -33,15 +34,20 @@ test("paper pane lists each live Noctua source separately and uses its exact sou
   const second=f.item(3,"attachment",{source:true,parentID:1,title:"Noctua Note — Second"});
   f.item(4,"attachment",{parentID:1,title:"PDF"});f.item(5,"attachment",{source:true,parentID:1,deleted:true});
   const {enabled,summary}=await f.render(paper);assert.equal(enabled,true);assert.equal(summary,"2");
-  const buttons=f.body.all("button");assert.deepEqual(buttons.map(b=>b.textContent),["Open","Open","New Noctua Note"]);
-  await buttons[1].click();assert.equal(f.opened[0].item,second);assert.notEqual(f.opened[0].item,first);
-  await buttons[2].click();assert.equal(f.created[0].item,paper);
+  const rows=f.body.rows(),buttons=f.body.all("button");
+  assert.deepEqual(buttons.map(b=>b.textContent),["+ New note"]);
+  assert.deepEqual(rows.map(r=>r.children[0].textContent),["First","Second"]);
+  await rows[1].events.click?.();assert.equal(f.opened.length,0,"single click must not open");
+  await rows[1].events.dblclick();assert.equal(f.opened[0].item,second);assert.notEqual(f.opened[0].item,first);
+  await rows[0].events.keydown({key:"Enter",preventDefault(){}});assert.equal(f.opened[1].item,first);
+  await buttons[0].click();assert.equal(f.created[0].item,paper);
 });
 test("PDF reader context resolves the parent while standalone source stays standalone",async()=>{
   const f=fixture();const paper=f.item(1,"paper",{attachments:[2]});const pdf=f.item(2,"attachment",{parentID:1});
   await f.render(pdf);await f.body.all("button")[0].click();assert.equal(f.created[0].item,paper);
   const standalone=f.item(3,"attachment",{source:true,title:"Standalone"});await f.render(standalone);
-  await f.body.all("button")[0].click();assert.equal(f.opened[0].item,standalone);
+  await f.body.rows()[0].events.dblclick();assert.equal(f.opened[0].item,standalone);
+  assert.equal(f.body.rows()[0].children[0].textContent,"Standalone");
 });
 test("ordinary native notes never show a paper's arbitrary source, and only a verified preview resolves",async()=>{
   const f=fixture();f.item(1,"paper",{attachments:[2]});
@@ -49,7 +55,7 @@ test("ordinary native notes never show a paper's arbitrary source, and only a ve
   const preview=f.item(3,"note",{parentID:1,relatedItems:[source.key]});
   const ordinary=f.item(4,"note",{parentID:1,relatedItems:[source.key]});
   assert.equal((await f.render(ordinary)).enabled,false);assert.equal(f.body.all("button").length,0);
-  assert.equal((await f.render(preview)).enabled,true);await f.body.all("button")[0].click();assert.equal(f.opened[0].item,source);
+  assert.equal((await f.render(preview)).enabled,true);await f.body.rows()[0].events.dblclick();assert.equal(f.opened[0].item,source);
 });
 test("pane refreshes after item notifications and cleanup unregisters once",async()=>{
   const f=fixture();let refreshes=0;f.hooks.onInit({body:f.body,refresh:()=>refreshes++});
@@ -63,4 +69,21 @@ test("group/deleted contexts hide the pane and readonly contexts prohibit creati
   const f=fixture();assert.equal((await f.render(f.item(1,"paper",{libraryID:2}))).enabled,false);
   assert.equal((await f.render(f.item(2,"paper",{deleted:true}))).enabled,false);
   await f.render(f.item(3,"paper"),false);const button=f.body.all("button")[0];assert.equal(button.disabled,true);await button.click();assert.equal(f.created.length,0);
+});
+
+test("sidebar titles drop the repeated prefix and modified times read naturally",()=>{
+  assert.equal(pane.displayTitle("Noctua Note — Long Name"),"Long Name");
+  assert.equal(pane.displayTitle("Noctua Note"),"Untitled");assert.equal(pane.displayTitle(""),"Untitled");
+  const now=Date.parse("2026-11-02T12:00:00Z");
+  assert.equal(pane.relativeTime("2026-11-02 11:59:40",now),"Just now");
+  assert.equal(pane.relativeTime("2026-11-02 11:55:00",now),"5 min ago");
+  assert.equal(pane.relativeTime("2026-11-02 09:00:00",now),"3 h ago");
+  assert.equal(pane.relativeTime("2026-11-01 08:00:00",now),"Yesterday");
+  assert.equal(pane.relativeTime("2026-10-30 12:00:00",now),"3 days ago");
+  assert.equal(pane.relativeTime("",now),"");assert.equal(pane.relativeTime("nonsense",now),"");
+});
+test("an empty paper shows a quiet empty state and a visible create button",async()=>{
+  const f=fixture();await f.render(f.item(1,"paper",{attachments:[]}));
+  assert.equal(f.body.rows().length,0);assert.equal(f.body.all("p").some(p=>p.textContent==="No notes yet"),true);
+  assert.equal(f.body.all("button")[0].textContent,"+ New note");
 });

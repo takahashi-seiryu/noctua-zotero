@@ -42,3 +42,16 @@ test("quotation wrapping uses LaTeX opening and closing quotes",()=>{
   const ta=field("quote",0,5);key(ta,'"');
   assert.equal(ta.value,"``quote''");assert.equal(ta.value.slice(ta.selectionStart,ta.selectionEnd),"quote");
 });
+test("every icon used by the editor exists in the bundled Lucide set and the first screen stays minimal",()=>{
+  const ctx=vm.createContext({document:{}});
+  vm.runInContext(fs.readFileSync(require.resolve("../content/icons.js"),"utf8")+";this.icons=NoctuaIcons;",ctx);
+  const html=fs.readFileSync(require.resolve("../content/editor.html"),"utf8");
+  const js=fs.readFileSync(require.resolve("../content/editor.js"),"utf8");
+  const used=new Set([...html.matchAll(/data-icon="([\w-]+)"/g)].map(m=>m[1]));
+  for(const m of js.matchAll(/"((?:[a-z]+-)*[a-z0-9]+)"(?=\])|,"((?:[a-z]+-)+[a-z0-9]+)"\]/g))if(ctx.icons.data[m[1]||m[2]])used.add(m[1]||m[2]);
+  for(const name of ["rows-2","columns-2","chevron-up","chevron-down","trash-2","type","pen-line"])used.add(name);
+  for(const name of used)assert.ok(ctx.icons.data[name],"missing icon "+name);
+  const header=html.slice(html.indexOf("<header>"),html.indexOf("</header>"));
+  const visible=header.replace(/<div id="more-menu"[\s\S]*?<\/div>/,"");
+  assert.equal((visible.match(/<button/g)||[]).length,4,"header should show only undo, redo, theme and the menu trigger");
+});

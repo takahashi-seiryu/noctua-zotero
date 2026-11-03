@@ -189,6 +189,27 @@
     added.dispatchEvent(new win.Event("input",{bubbles:true}));
     assert(win.document.querySelector("[data-noctua-cite]")?.textContent.includes("Lovelace 2026"),"Zotero citation did not resolve author/year");
     assert(win.document.getElementById("references").textContent.includes(paper.getField("title")),"References list missing cited title");
+    {const cs=sel=>{const n=win.document.querySelector(sel);return n?win.getComputedStyle(n):null;};
+      const info={bg:cs("body")?.backgroundColor,pill:cs(".ins-pill")?.opacity,handle:cs(".nb-handle")?.opacity,sr:cs(".sr-only")?.position,addRow:cs(".add-row")?.opacity,iconBorder:cs("#undo")?.borderTopColor,sheets:[...win.document.styleSheets].map(x=>x.href)};
+      result.styleProbe=info;
+      assert(info.pill==="0"&&info.handle==="0"&&info.sr==="absolute",
+        "Editor stylesheet is not applied as designed: "+JSON.stringify(info));}
+    {const t=win.document.getElementById("title"),original=t.value,one=t.getBoundingClientRect().height;
+      t.value="A very long note title ".repeat(12);t.dispatchEvent(new win.Event("input",{bubbles:true}));
+      const many=t.getBoundingClientRect().height;
+      assert(many>one*1.8&&t.scrollHeight<=Math.ceil(many),"Long titles must wrap onto multiple lines: "+one+" -> "+many);
+      t.value=original;t.dispatchEvent(new win.Event("input",{bubbles:true}));}
+    const handleCount=win.document.querySelectorAll(".nb-handle").length, total=win.NoctuaNotesEditor.getDocument().blocks.length;
+    assert(handleCount===total&&!win.document.querySelector(".nb-tools"),"Each block needs one drag handle and no inline tool buttons");
+    win.document.querySelectorAll(".nb-handle")[1].click();assert(win.document.querySelector(".ctx-menu"),"Clicking the handle did not open the block menu");win.document.querySelectorAll(".nb-handle")[1].dispatchEvent(new win.Event("contextmenu",{bubbles:true,cancelable:true}));
+    const ctx=win.document.querySelector(".ctx-menu");
+    assert(ctx&&["up","down","duplicate","delete"].every(a=>ctx.querySelector(`[data-action="${a}"]`)),"Handle right-click menu is incomplete: "+(ctx?ctx.outerHTML.slice(0,400):"no menu; msg="+win.document.getElementById("message").textContent+" handles="+handleCount+" body="+win.document.body.lastElementChild?.outerHTML?.slice(0,120)));
+    ctx.querySelector('[data-action="duplicate"]').click();
+    assert(win.NoctuaNotesEditor.getDocument().blocks.length===total+1&&!win.document.querySelector(".ctx-menu"),"Duplicate from handle menu failed");
+    win.document.querySelectorAll(".nb-handle")[2].dispatchEvent(new win.Event("contextmenu",{bubbles:true,cancelable:true}));
+    win.document.querySelector('.ctx-menu [data-action="delete"]').click();
+    assert(win.NoctuaNotesEditor.getDocument().blocks.length===total,"Delete from handle menu failed");
+    result.passed.push("Block handle right-click menu duplicates and deletes without inline tool buttons");
     result.passed.push("Real editor inserts at position, undoes/redoes blocks and resolves Zotero citations with References");
     await win.NoctuaNotesEditor.save();
 
@@ -235,7 +256,14 @@
     const openFromPane=customPane.querySelector(`[data-noctua-open="${session.item.key}"]`);
     assert(openFromPane,"Sidebar did not list the paper's exact Noctua source");
     assert(!customPane.textContent.includes("a normal Zotero note with a similar title"),"Ordinary note leaked into Noctua-only sidebar list");
-    const beforePaneOpen=NoctuaNotes.tabs.size;openFromPane.click();
+    {const icon=mainWindow.document.querySelector('.tab-icon[data-item-type="noctuanote"]');
+      assert(icon,"Noctua tab does not use its own icon name");
+      assert(mainWindow.getComputedStyle(icon).backgroundImage.includes("noctua-notes.svg"),"Noctua tab icon artwork is not applied");}
+    const beforePaneOpen=NoctuaNotes.tabs.size;
+    openFromPane.click();await new Promise(resolve=>setTimeout(resolve,150));
+    assert(NoctuaNotes.tabs.size===beforePaneOpen&&mainWindow.Zotero_Tabs.selectedID==="zotero-pane","A single click must not open the note");
+    assert(!openFromPane.textContent.includes("Noctua Note —")&&openFromPane.querySelectorAll("button").length===0,"Sidebar row should show a clean title and no Open button");
+    openFromPane.dispatchEvent(new mainWindow.Event("dblclick",{bubbles:true}));
     const expected=[...NoctuaNotes.tabs.values()].find(entry=>entry.session.item?.key===session.item.key);
     for(let n=0;n<100&&mainWindow.Zotero_Tabs.selectedID!==expected.id;n++)await new Promise(resolve=>setTimeout(resolve,50));
     assert(mainWindow.Zotero_Tabs.selectedID===expected.id&&NoctuaNotes.tabs.size===beforePaneOpen,"Sidebar Open did not select the exact existing instance");

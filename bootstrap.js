@@ -30,9 +30,21 @@ async function startup({id, version, rootURI}) {
     loadLocalization(window) {
       window.MozXULElement.insertFTLIfNeeded("noctua-notes.ftl");
       this.localizationWindows.add(window);
+      this.installTabIcon(window);
       if(!this.activationHooks.has(window)) {
         this.activationHooks.set(window,scope.NoctuaNotesActivation.install({window,Zotero,storage,open:args=>this.open(args)}));
       }
+    },
+    // Zotero draws tab icons from the tab's item-type name. A distinct name keeps
+    // Noctua tabs apart from native note tabs; the rule below supplies its artwork.
+    tabIconName: "noctuanote",
+    installTabIcon(window) {
+      const document=window.document;
+      if(document.getElementById("noctua-notes-tab-icon"))return;
+      const style=document.createElementNS("http://www.w3.org/1999/xhtml","style");
+      style.id="noctua-notes-tab-icon";
+      style.textContent=`.icon-item-type[data-item-type="${this.tabIconName}"]{background:url("chrome://noctuanotes/content/icons/noctua-notes.svg") no-repeat center/contain}`;
+      document.documentElement.append(style);
     },
     async referenceIndex(libraryID) {
       const items = await Zotero.Items.getAll(libraryID, true, false, false);
@@ -182,7 +194,7 @@ async function startup({id, version, rootURI}) {
         const draft = await storage.getDraft(session.id);
         this.owners.add(owner);
         const tab = owner.Zotero_Tabs.add({type:"noctuanotes", title:"Noctua Notes — "+doc.title,
-          data:{icon:"note", sourceKey:source?.key, libraryID}, select:true,
+          data:{icon:this.tabIconName, sourceKey:source?.key, libraryID}, select:true,
           onClose:() => {
             const entry=this.tabs.get(tab.id);
             if (!entry) return;
@@ -348,6 +360,7 @@ async function shutdown() {
     for (const window of NoctuaNotes.localizationWindows) {
       if (!window.closed) {
         window.document.querySelector('link[rel="localization"][href="noctua-notes.ftl"]')?.remove();
+        window.document.getElementById("noctua-notes-tab-icon")?.remove();
       }
     }
     delete Zotero.NoctuaNotes;

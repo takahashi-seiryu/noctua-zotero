@@ -76,7 +76,7 @@ function editorFixture(ink=false,imported=false) {
     writeDraft:async(...args)=>{calls.drafts.push(args);}},
     model:{esc:value=>value,validate(value){calls.validated.push(value);return value;}},
     exportSource:async(value,win)=>{calls.exported.push({value,win});}};
-  const context=vm.createContext({window,document,structuredClone,NoctuaAppearance:{mount(){}},
+  const context=vm.createContext({window,document,structuredClone,NoctuaAppearance:{mount(){}},NoctuaIcons:{hydrate(){},create:()=>element()},
     NoctuaLatex:{renderDoc:()=>[]},Ink:{refresh(){},mount(el,block,change){return {
       finish(){if(pendingInk){pendingInk=false;block.strokes.push({c:'#e8e6e1',w:1,p:[[0,0,1]]});change();}},destroy(){}};}},
     setTimeout:()=>1,clearTimeout(){}});

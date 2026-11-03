@@ -87,3 +87,28 @@ portable source after its external image has been removed.
 The launcher uses a separate test app and temporary unsigned-in library; it
 does not use the user's Zotero profile. Integration does not verify live WebDAV
 transfer, other Zotero versions, pen hardware, or multi-device conflicts.
+
+## 0.5.1 UI refresh
+
+The editor now reads as a note rather than a toolbar. The first screen shows a
+slim header (status, undo, redo, theme, ⋯ menu), a large title and a page-width
+writing column. LaTeX preamble, reload, guide and settings moved into the ⋯
+menu. Block tools and between-block inserters appear on hover or focus; a quiet
+Text/Drawing/Image/Citation row sits below the note. Text editing is stacked
+above its live preview, and new notes start with the title focused (Enter moves
+to the first block). Icons come from the official Lucide set (`content/icons.js`).
+
+## 0.5.2 Notion-style block interaction
+
+Blocks now sit tightly together. Each block has a left grip handle (visible on
+hover): drag it to reorder, or click / right-click it for Move, Duplicate and
+Delete (Alt+Up/Down moves from the keyboard; Undo restores a deleted block).
+The Text/Drawing inserter between blocks and the trailing add row appear only
+when the pointer is near them. Inline per-block toolbars were removed.
+
+## 0.5.5 Sidebar notes list
+
+The item-pane list now shows a clean title (no repeated "Noctua Note — "
+prefix) clamped to two lines, with a quiet "modified" line beneath. Rows have no
+Open button: double-click (or Enter on a focused row) opens the note in its tab.
+Creation is a text-style "+ New note" button; an empty paper shows "No notes yet".

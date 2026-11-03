@@ -63,6 +63,7 @@ function texKeys(e, ta) {
 
 window.startNoctuaNotes = function (host) {
   const $ = id => document.getElementById(id);
+  NoctuaIcons.hydrate();
   NoctuaAppearance.mount({
     appearance: host?.appearance, document, window,
     refresh: () => Ink.refresh(),
@@ -168,7 +169,7 @@ window.startNoctuaNotes = function (host) {
         if(b.type!=="text") return;
         const view=document.querySelector(`[data-block-id="${CSS.escape(b.id)}"] .nb-view`);
         if(view) {
-          view.innerHTML=views[i] || '<p class="empty">Click to write text or LaTeX…</p>';
+          view.innerHTML=views[i] || '<p class="empty">Start writing…</p>';
           view.querySelectorAll("iframe,video,audio,object,embed,script").forEach(el=>el.remove());
           view.querySelectorAll("[data-tex-label]").forEach(el=>{el.id="note-label-"+el.dataset.texLabel;});
         }
@@ -191,20 +192,79 @@ window.startNoctuaNotes = function (host) {
     if(editing && editing!==id) document.querySelector(`[data-block-id="${CSS.escape(editing)}"]`)?.classList.remove("editing");
     editing=id;focusBlock=id;
     block?.classList.add("editing");
-    block?.querySelector("textarea")?.focus();
+    const ta=block?.querySelector("textarea");
+    ta?.focus();ta?._grow?.();
+  }
+  function growTitle() {
+    const t=$("title");
+    if(!t.style)return;
+    t.style.height="auto";
+    if(t.scrollHeight)t.style.height=t.scrollHeight+"px";
+  }
+  let dragId=null,menuEl=null;
+  function clearDrop() {document.querySelectorAll(".drop-before,.drop-after").forEach(n=>n.classList.remove("drop-before","drop-after"));}
+  function closeMenu() {menuEl?.remove();menuEl=null;}
+  function blockAction(id, action, after) {
+    pads.forEach(p=>p.finish());
+    const i=doc.blocks.findIndex(v=>v.id===id);
+    if(i<0)return;
+    const b=doc.blocks[i];
+    if(action==="beside") b.beside=!b.beside;
+    else if(action==="delete") doc.blocks.splice(i,1);
+    else if(action==="duplicate") {const copy=clone(b);copy.id=uid();doc.blocks.splice(i+1,0,copy);}
+    else {
+      const j=action==="up" ? i-1 : i+1;
+      if(j<0||j>=doc.blocks.length)return;
+      [doc.blocks[i],doc.blocks[j]]=[doc.blocks[j],doc.blocks[i]];
+    }
+    editing=null;render();change();after?.();
+  }
+  function moveBlock(id, target, after) {
+    pads.forEach(p=>p.finish());
+    const from=doc.blocks.findIndex(v=>v.id===id), to=doc.blocks.findIndex(v=>v.id===target);
+    if(from<0||to<0||id===target)return;
+    const [b]=doc.blocks.splice(from,1);
+    const at=doc.blocks.findIndex(v=>v.id===target)+(after?1:0);
+    doc.blocks.splice(at,0,b);
+    editing=null;render();change();
+  }
+  function blockMenu(id, x, y) {
+    closeMenu();
+    const i=doc.blocks.findIndex(v=>v.id===id);
+    if(i<0)return;
+    const b=doc.blocks[i];
+    const items=[["Move up","up","arrow-up",i===0],["Move down","down","arrow-down",i===doc.blocks.length-1],["Duplicate","duplicate","copy"]];
+    if(b.type==="text"&&doc.blocks[i-1]?.type==="ink")items.push([b.beside?"Show below drawing":"Show beside drawing","beside",b.beside?"rows-2":"columns-2"]);
+    items.push(["Delete","delete","trash-2"]);
+    const menu=document.createElement("div");menu.className="ctx-menu";menu.setAttribute("role","menu");
+    for(const [label,action,icon,disabled] of items) {
+      const button=document.createElement("button");button.type="button";button.setAttribute("role","menuitem");
+      button.dataset.action=action;button.disabled=!!disabled;
+      if(action==="delete")button.classList.add("danger");
+      button.append(NoctuaIcons.create(icon,15),label);
+      button.addEventListener("click",()=>{closeMenu();blockAction(id,action);});
+      menu.append(button);
+    }
+    document.body.append(menu);menuEl=menu;
+    const w=menu.offsetWidth||180,h=menu.offsetHeight||180;
+    menu.style.left=Math.max(4,Math.min(x,window.innerWidth-w-4))+"px";
+    menu.style.top=Math.max(4,Math.min(y,window.innerHeight-h-4))+"px";
+    menu.querySelector("button:not(:disabled)")?.focus();
   }
   function render() {
     pads.forEach(p=>p.finish());
     pads.forEach(p=>p.destroy());pads.clear();
-    $("title").value=doc.title;
+    $("title").value=doc.title;growTitle();
     $("preamble").value=doc.preamble;
     $("blocks").replaceChildren();
     function inserter(index) {
       const bar=document.createElement("div");bar.className="block-inserter";
       bar.setAttribute("role","group");bar.setAttribute("aria-label",`Insert at position ${index+1}`);
-      for(const [type,label] of [["text","+ Text / LaTeX"],["ink","+ Drawing"]]) {
-        const button=document.createElement("button");button.textContent=label;
-        button.addEventListener("click",()=>insert(type,null,index));bar.append(button);
+      const pill=document.createElement("div");pill.className="ins-pill";bar.append(pill);
+      for(const [type,label,icon] of [["text","Text","type"],["ink","Drawing","pen-line"]]) {
+        const button=document.createElement("button");button.type="button";
+        button.append(NoctuaIcons.create(icon,13),label);button.setAttribute("aria-label",`Add ${label.toLowerCase()} here`);
+        button.addEventListener("click",()=>insert(type,null,index));pill.append(button);
       }
       return bar;
     }
@@ -217,39 +277,27 @@ window.startNoctuaNotes = function (host) {
       el.dataset.blockId=b.id;
       el.addEventListener("focusin",()=>{focusBlock=b.id;});
       el.addEventListener("pointerdown",()=>{focusBlock=b.id;});
-      const tools=document.createElement("div");tools.className="nb-tools";
-      for (const [label,action] of [["Move up","up"],["Move down","down"],["Remove block","remove"]]) {
-        const button=document.createElement("button");button.textContent=label;button.dataset.action=action;
-        button.disabled=(action==="up" && blockIndex===0)||(action==="down" && blockIndex===doc.blocks.length-1);
-        tools.append(button);
-      }
-      if(b.type==="text" && doc.blocks[blockIndex-1]?.type==="ink") {
-        const button=document.createElement("button");button.textContent=b.beside ? "Show below" : "Show beside drawing";
-        button.dataset.action="beside";tools.append(button);
-      }
-      tools.addEventListener("click",e=>{
-        const action=e.target.closest("button")?.dataset.action;
-        if(!action)return;
-        pads.forEach(p=>p.finish());
-        const i=doc.blocks.findIndex(v=>v.id===b.id);
-        if(action==="beside") { b.beside=!b.beside; }
-        else if(action==="remove") {
-          if(!window.confirm("Remove this block? Saved source changes will sync to your other devices."))return;
-          doc.blocks.splice(i,1);
-        } else {
-          const j=action==="up" ? i-1 : i+1;
-          if(j<0||j>=doc.blocks.length)return;
-          [doc.blocks[i],doc.blocks[j]]=[doc.blocks[j],doc.blocks[i]];
-        }
-        editing=null;render();change();
+      const handle=document.createElement("button");handle.type="button";handle.className="nb-handle";
+      handle.append(NoctuaIcons.create("grip-vertical",16));
+      handle.title="Drag to move · Click or right-click for options";handle.setAttribute("aria-label","Block options");
+      handle.addEventListener("pointerdown",()=>{el.draggable=true;});
+      handle.addEventListener("pointerup",()=>{el.draggable=false;});
+      handle.addEventListener("click",e=>{const r=handle.getBoundingClientRect();blockMenu(b.id,r.left,r.bottom+4);e.stopPropagation();});
+      handle.addEventListener("contextmenu",e=>{e.preventDefault();try{blockMenu(b.id,e.clientX,e.clientY);}catch(error){report(error);}});
+      handle.addEventListener("keydown",e=>{
+        if(e.altKey&&(e.key==="ArrowUp"||e.key==="ArrowDown")){e.preventDefault();blockAction(b.id,e.key==="ArrowUp"?"up":"down",()=>document.querySelector(`[data-block-id="${CSS.escape(b.id)}"] .nb-handle`)?.focus());}
       });
-      el.append(tools);
+      el.addEventListener("dragstart",e=>{dragId=b.id;el.classList.add("dragging");e.dataTransfer?.setData("text/plain","noctua-block");if(e.dataTransfer)e.dataTransfer.effectAllowed="move";});
+      el.addEventListener("dragend",()=>{dragId=null;el.draggable=false;clearDrop();el.classList.remove("dragging");});
+      el.append(handle);
       if(b.type==="text") {
         const wrap=document.createElement("div");wrap.className="text-layout";
         const textarea=document.createElement("textarea");textarea.value=b.src;textarea.spellcheck=false;
         textarea.setAttribute("aria-label","LaTeX block source");
         textarea.placeholder="Write text, $inline math$, or \\section{A heading}";
-        textarea.addEventListener("input",()=>{b.src=textarea.value;renderPreviews();change("text:"+b.id);});
+        const grow=()=>{textarea.style.height="auto";textarea.style.height=Math.max(96,textarea.scrollHeight+2)+"px";};
+        textarea.addEventListener("input",()=>{b.src=textarea.value;grow();renderPreviews();change("text:"+b.id);});
+        textarea._grow=grow;
         textarea.addEventListener("keydown",e=>{
           if(texKeys(e,textarea))return;
           if(e.key==="Escape" || (e.key==="Enter"&&(e.metaKey||e.ctrlKey))) {
@@ -302,6 +350,26 @@ window.startNoctuaNotes = function (host) {
     render();message("");status("Loaded saved source");
   }
   $("parent-title").textContent=host.parentTitle;
+  $("blocks").addEventListener("dragover",e=>{
+    if(!dragId)return;
+    const target=e.target.closest?.(".nb");
+    if(!target||target.dataset.blockId===dragId)return;
+    e.preventDefault();clearDrop();
+    const r=target.getBoundingClientRect();
+    target.classList.add(e.clientY>r.top+r.height/2?"drop-after":"drop-before");
+  });
+  $("blocks").addEventListener("drop",e=>{
+    if(!dragId)return;
+    const target=e.target.closest?.(".nb");
+    if(!target)return;
+    e.preventDefault();e.stopPropagation();
+    const r=target.getBoundingClientRect(),id=dragId;
+    dragId=null;clearDrop();
+    moveBlock(id,target.dataset.blockId,e.clientY>r.top+r.height/2);
+  },true);
+  document.addEventListener("pointerdown",e=>{if(menuEl&&!e.target.closest?.(".ctx-menu"))closeMenu();});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"&&menuEl)closeMenu();});
+  window.addEventListener("blur",closeMenu);
   $("notes-stage").addEventListener("click",e=>{
     const citation=e.target.closest("[data-noctua-cite]");
     if(citation) {e.preventDefault();e.stopPropagation();Promise.resolve(host.openCitation?.(citation.dataset.noctuaCite)).catch(report);return;}
@@ -315,7 +383,14 @@ window.startNoctuaNotes = function (host) {
     } else if(href.startsWith("#")) document.getElementById(decodeURIComponent(href.slice(1)))?.scrollIntoView();
     else host.openURL?.(href);
   },true);
-  $("title").addEventListener("input",()=>{doc.title=$("title").value;document.title="Noctua Notes — "+doc.title;host.onTitle?.(doc.title);change("title");});
+  $("title").addEventListener("input",()=>{const t=$("title");if(/[\r\n]/.test(t.value))t.value=t.value.replace(/\s*[\r\n]+\s*/g," ");growTitle();doc.title=t.value;document.title="Noctua Notes — "+doc.title;host.onTitle?.(doc.title);change("title");});
+  window.addEventListener("resize",growTitle);
+  $("title").addEventListener("keydown",e=>{
+    if(e.key!=="Enter"||e.isComposing)return;
+    e.preventDefault();
+    const first=doc.blocks.find(v=>v.type==="text");
+    if(first)edit(first.id);else insert("text",null,0);
+  });
   $("preamble").addEventListener("input",()=>{doc.preamble=$("preamble").value;renderPreviews();change("preamble");});
   $("preamble").addEventListener("keydown",e=>{if(texKeys(e,$("preamble")))return;if(e.key==="Escape")$("preamble-panel").open=false;});
   $("undo").addEventListener("click",()=>restoreHistory());
@@ -339,6 +414,17 @@ window.startNoctuaNotes = function (host) {
   $("add-image").addEventListener("click",()=>$("image-input").click());
   $("image-input").addEventListener("change",()=>{addImages($("image-input").files).catch(report);$("image-input").value="";});
   $("reload").addEventListener("click",()=>reload().catch(report));
+  const menu=$("more-menu"), more=$("more");
+  function setMenu(open) {menu.hidden=!open;more.setAttribute("aria-expanded",String(open));}
+  more.addEventListener("click",e=>{e.stopPropagation();setMenu(menu.hidden);if(!menu.hidden)menu.querySelector("button:not(:disabled)")?.focus();});
+  menu.addEventListener("click",()=>setMenu(false));
+  document.addEventListener("click",e=>{if(!menu.hidden&&!e.target.closest(".menu-wrap"))setMenu(false);});
+  document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!menu.hidden){setMenu(false);more.focus();}});
+  $("toggle-preamble").addEventListener("click",()=>{
+    const panel=$("preamble-panel"),show=panel.hidden;panel.hidden=!show;panel.open=show;
+    if(show)$("preamble").focus();
+  });
+  if(doc.preamble.trim()){$("preamble-panel").hidden=false;$("preamble-panel").open=true;}
   document.addEventListener("paste",e=>{
     const images=[...(e.clipboardData?.files || [])].filter(f=>f.type.startsWith("image/"));
     if(images.length){e.preventDefault();addImages(images).catch(report);}
@@ -386,7 +472,10 @@ window.startNoctuaNotes = function (host) {
     bar.append(recover);$("message").after(bar);
   }
   render();updateHistory();document.title="Noctua Notes — "+doc.title;
-  status(session.item ? "Saved" : "New note · autosaves when edited");
+  status(session.item ? "Saved" : "New note");
+  if(!session.item && !host.draft && doc.blocks.length===1 && doc.blocks[0].type==="text" && !doc.blocks[0].src) {
+    $("title").focus();
+  }
   // A narrow, explicit surface for the isolated Zotero integration tests.
   window.NoctuaNotesEditor={getDocument:()=>clone(doc),save,reload,exportSource,takeCloseSnapshot};
 };
