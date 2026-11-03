@@ -51,12 +51,24 @@
     <div id="chat-history" class="chat-history" hidden="hidden"></div>
     <div id="chat-log" role="log" aria-live="polite"></div>
     <div id="chat-proposal" hidden="hidden"></div>
+    <div id="chat-model-pop" class="chat-model-pop" role="dialog" aria-label="Model and reasoning" hidden="hidden">
+      <div class="cmp-models">
+        <input id="chat-model-search" class="cmp-search" type="search" placeholder="Search models…" aria-label="Search models" spellcheck="false" />
+        <div id="chat-model-list" class="cmp-list" role="listbox" aria-label="Models"></div>
+      </div>
+      <div class="cmp-efforts">
+        <div class="cmp-head"><span>Reasoning</span><span id="chat-model-current" class="cmp-current"></span></div>
+        <div id="chat-effort-list" class="cmp-list" role="listbox" aria-label="Reasoning"></div>
+      </div>
+    </div>
     <form id="chat-form">
       <div id="chat-attachments" class="chat-attachments" hidden="hidden"></div>
-      <textarea id="chat-input" rows="2" aria-label="Message the assistant" placeholder="Ask anything. Edit, restructure, or explain this note" spellcheck="false"></textarea>
+      <textarea id="chat-input" rows="2" aria-label="Message the assistant" placeholder="Ask anything. / commands, $ skills" spellcheck="false"></textarea>
       <div class="chat-composer-bar">
         <button id="chat-attach" class="icon-btn" type="button" aria-label="Attach files or images" title="Attach files or images"><span data-icon="paperclip"></span></button>
         <input id="chat-file" type="file" multiple hidden="hidden" />
+        <button id="chat-fast" class="icon-btn chat-fast" type="button" aria-pressed="false" aria-label="Fast mode" title="Fast mode" hidden="hidden"><span data-icon="zap"></span></button>
+        <button id="chat-model" class="chat-model-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Model and reasoning" title="Model and reasoning"><span class="chat-model-name">Default</span><span data-icon="chevron-down"></span></button>
         <button id="chat-send" class="icon-btn" type="submit" aria-label="Send" title="Send (Enter)"></button>
       </div>
     </form>
@@ -118,6 +130,9 @@
       <h3>Assistant</h3>
       <ul>
         <li>Open it with the sparkles button or <kbd>⇧</kbd><kbd>⌘/Ctrl</kbd><kbd>K</kbd>. It runs the Claude or Codex command-line tool already installed on your computer.</li>
+        <li>Choose the model and reasoning level with the selector next to the send button. The lists come from the provider itself, in the order it recommends: Claude Code's own model list for your account and the Codex CLI's catalog. The main models come first; older versions are under <em>Show more</em>. <em>Default</em> leaves the choice to the CLI. With Codex, the lightning button turns <strong>Fast mode</strong> on or off (faster responses, more usage) for models that offer it.</li>
+        <li>Type <code>/</code> for commands (<code>/new</code>, <code>/history</code>, <code>/model</code>, <code>/provider</code>) and the skills installed for the selected CLI, or <code>$</code> for skills only. A skill you pick is sent along with your message; the assistant can only use its file tools, so skills that need more cannot run.</li>
+        <li>For a note under a paper with a PDF, the assistant can also read the paper (full text and your highlights) as reference while it edits the note, so you can ask it to use a section or check a claim. Turn this off in Settings → Noctua Notes → Provider.</li>
         <li>You can attach files and images. The assistant proposes edits; nothing changes until you press <strong>Apply</strong>, and one <strong>Undo</strong> reverts it.</li>
         <li>Past conversations for this note are under the history button.</li>
       </ul>

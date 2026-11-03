@@ -264,6 +264,7 @@
     {const fake=PathUtils.join(PathUtils.tempDir,"noctua-fake-claude-"+Date.now()+".py");
       await IOUtils.writeUTF8(fake,`#!/usr/bin/python3
 import sys,json,os
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)),"noctua-fake-args.json"),"w").write(json.dumps(sys.argv))
 sys.stdin.read()
 t=open("note.tex").read().split("\\n")
 for i,l in enumerate(t):
@@ -306,7 +307,22 @@ print(json.dumps({"type":"result","subtype":"success","result":"Appended a marke
         assert(brace==="{}"&&bracePos===1,"One { keystroke must make exactly one pair, got: "+brace);
         assert(paren==="()"&&dollar==="$$","Brackets and dollars must pair once: "+paren+" "+dollar);
         ta.value=original;ta.dispatchEvent(new win.Event("input",{bubbles:true}));}
-      {Zotero.Prefs.set("extensions.noctua-notes.agent.codexPath",fake,true);
+      {const fakeCodex=PathUtils.join(PathUtils.tempDir,"noctua-fake-codex-"+Date.now()+".py");
+        await IOUtils.writeUTF8(fakeCodex,`#!/usr/bin/python3
+import sys,json,os
+if len(sys.argv)>2 and sys.argv[1]=="debug":
+    print(json.dumps({"models":[
+      {"slug":"cx-fast","display_name":"CX Fast","visibility":"list","priority":1,"default_reasoning_level":"low","supported_reasoning_levels":[{"effort":"low"},{"effort":"high"},{"effort":"ultra"}],"service_tiers":[{"id":"priority","name":"Fast","description":"2x speed"}]},
+      {"slug":"cx-slow","display_name":"CX Slow","visibility":"list","priority":2,"default_reasoning_level":"medium","supported_reasoning_levels":[{"effort":"medium"}],"service_tiers":[]}]}))
+    sys.exit(0)
+sys.stdin.read()
+open(os.path.join(os.path.dirname(os.path.abspath(__file__)),"noctua-fake-codex-args.json"),"w").write(json.dumps(sys.argv))
+print(json.dumps({"type":"thread.started","thread_id":"t1"}))
+print(json.dumps({"type":"item.completed","item":{"type":"agent_message","text":"CODEX-OK"}}))
+print(json.dumps({"type":"turn.completed"}))
+`);
+        await IOUtils.setPermissions(fakeCodex,0o755);
+        Zotero.Prefs.set("extensions.noctua-notes.agent.codexPath",fakeCodex,true);
         d.getElementById("chat-toggle").click();
         assert(await wait(()=>d.querySelectorAll(".chat-provider-seg button").length===2),"Both providers should show a switch");
         const seg=d.querySelector(".chat-provider-seg"),btn=id=>seg.querySelector(`button[data-provider="${id}"]`),sel=()=>d.getElementById("chat-provider").value;
@@ -314,7 +330,33 @@ print(json.dumps({"type":"result","subtype":"success","result":"Appended a marke
         btn("claude").click();assert(sel()==="codex","Pressing the selected provider should flip to the other one");
         btn("codex").click();assert(sel()==="claude","Pressing the selected provider again should flip back");
         btn("codex").click();assert(sel()==="codex","Pressing the other provider should select it");
-        seg.dispatchEvent(new win.MouseEvent("click",{bubbles:true}));assert(sel()==="claude","Pressing the switch itself should flip it");
+        // Codex: the model list comes from its catalog and Fast mode is a lightning button.
+        assert(sel()==="codex");
+        const bolt=d.getElementById("chat-fast");
+        assert(await wait(()=>!bolt.hidden),"Codex should offer a Fast mode button");
+        assert(bolt.getAttribute("aria-pressed")==="false","Fast mode should start off");
+        d.getElementById("chat-model").click();
+        assert(await wait(()=>[...d.querySelectorAll("#chat-model-list .cmp-row")].some(r=>r.textContent.includes("CX Slow"))),"The Codex model list should come from its catalog");
+        [...d.querySelectorAll("#chat-model-list .cmp-row")].find(r=>r.textContent.includes("CX Slow")).click();
+        assert(await wait(()=>bolt.disabled),"A model without a Fast tier should disable the button");
+        [...d.querySelectorAll("#chat-model-list .cmp-row")].find(r=>r.textContent.includes("CX Fast")).click();
+        assert(await wait(()=>!bolt.disabled),"A Fast-capable model should enable the button");
+        assert(await wait(()=>[...d.querySelectorAll("#chat-effort-list .cmp-row")].some(r=>r.textContent.includes("Ultra"))),"Codex reasoning levels should include Ultra");
+        d.getElementById("chat-model").click();
+        bolt.click();assert(await wait(()=>bolt.getAttribute("aria-pressed")==="true"),"Clicking the lightning button should turn Fast mode on");
+        assert(win.getComputedStyle(bolt).backgroundColor==="rgba(0, 0, 0, 0)","The Fast button must keep a transparent background when on: "+win.getComputedStyle(bolt).backgroundColor);
+        assert(win.getComputedStyle(bolt).color!==win.getComputedStyle(d.getElementById("chat-attach")).color,"The icon colour should show that Fast mode is on");
+        d.getElementById("chat-input").value="hello codex";
+        d.getElementById("chat-form").dispatchEvent(new win.Event("submit",{bubbles:true,cancelable:true}));
+        assert(await wait(()=>d.getElementById("chat-log").textContent.includes("CODEX-OK")),"Codex did not answer: "+d.getElementById("chat-log").textContent);
+        {const args=JSON.parse(await IOUtils.readUTF8(PathUtils.join(PathUtils.tempDir,"noctua-fake-codex-args.json")));
+          assert(args.includes('service_tier="priority"')&&args[args.indexOf("-m")+1]==="cx-fast","Codex did not receive Fast mode and the chosen model: "+JSON.stringify(args));}
+        bolt.click();assert(await wait(()=>bolt.getAttribute("aria-pressed")==="false"),"Clicking again should turn Fast mode off");
+        Zotero.NoctuaNotes.uiState.set("ui.agent.model.codex","");Zotero.NoctuaNotes.uiState.set("ui.agent.fast.codex","0");
+        await IOUtils.remove(fakeCodex,{ignoreAbsent:true});
+        btn("claude").click();
+        seg.dispatchEvent(new win.MouseEvent("click",{bubbles:true}));assert(sel()==="codex","Pressing the switch itself should flip it");
+        seg.dispatchEvent(new win.MouseEvent("click",{bubbles:true}));assert(sel()==="claude","Pressing the switch again should flip back");
         d.getElementById("chat-toggle").click();
         Zotero.Prefs.clear("extensions.noctua-notes.agent.codexPath",true);}
       {const ta=d.querySelector(".nb-text textarea"),original=ta.value;
@@ -340,9 +382,42 @@ print(json.dumps({"type":"result","subtype":"success","result":"Appended a marke
       {const dt=new win.DataTransfer();dt.items.add(new win.File(["hello"],"ref.txt",{type:"text/plain"}));
         d.getElementById("chat-form").dispatchEvent(new win.DragEvent("drop",{bubbles:true,cancelable:true,dataTransfer:dt}));}
       assert(await wait(()=>d.querySelector("#chat-attachments .chat-chip")),"Dropped file did not appear as an attachment chip");
+      {const input=d.getElementById("chat-input");
+        input.focus();input.value="/mo";input.setSelectionRange(3,3);input.dispatchEvent(new win.Event("input",{bubbles:true}));
+        assert(await wait(()=>d.querySelector(".slash-pop .slash-row")),"Typing / should list commands");
+        assert([...d.querySelectorAll(".slash-pop .slash-name")].some(n=>n.textContent==="/model"),"The /model command should be listed");
+        input.dispatchEvent(new win.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));
+        assert(await wait(()=>!d.getElementById("chat-model-pop").hidden),"Choosing /model should open the model picker");
+        assert(input.value==="","The command text should be removed from the message: "+JSON.stringify(input.value));
+        assert(!d.querySelector(".slash-pop"),"The list should close after choosing");
+        d.getElementById("chat-model").click();await wait(()=>d.getElementById("chat-model-pop").hidden);
+        input.value="$";input.setSelectionRange(1,1);input.dispatchEvent(new win.Event("input",{bubbles:true}));
+        await new Promise(r=>setTimeout(r,400));
+        assert([...d.querySelectorAll(".slash-pop .slash-tag")].every(t=>t.textContent==="skill"),"$ should list skills only");
+        input.dispatchEvent(new win.KeyboardEvent("keydown",{key:"Escape",bubbles:true,cancelable:true}));input.value="";}
+      {const modelBtn=d.getElementById("chat-model");
+        assert(modelBtn&&modelBtn.textContent.includes("Default"),"Model button should start at Default");
+        modelBtn.click();
+        assert(await wait(()=>d.querySelectorAll("#chat-model-list .cmp-row").length>=5),"Model list did not open");
+        const pick=(listId,text)=>[...d.querySelectorAll(`#${listId} .cmp-row`)].find(r=>r.textContent.includes(text));
+        {const search=d.getElementById("chat-model-search");
+          if(!search.hidden){search.focus();const cs=win.getComputedStyle(search);
+            assert(cs.outlineStyle==="none"||cs.outlineWidth==="0px","The model search box should show no focus outline: "+cs.outline);}}
+        pick("chat-model-list","Claude Opus").click();
+        assert(await wait(()=>pick("chat-effort-list","Extra High")),"Reasoning levels did not appear");
+        pick("chat-effort-list","High").click();
+        assert(await wait(()=>modelBtn.textContent.includes("Claude Opus")&&modelBtn.textContent.includes("High")),"Button did not show the choice: "+modelBtn.textContent);
+        assert(d.getElementById("chat-model-pop").hidden,"Popover should close after choosing a reasoning level");
+        assert(/^(opus|claude-opus[\w.-]*)$/.test(Zotero.NoctuaNotes.uiState.get("ui.agent.model.claude"))&&Zotero.NoctuaNotes.uiState.get("ui.agent.effort.claude")==="high","The choice was not persisted by the plugin");
+        await Zotero.NoctuaNotes.uiState.flush();
+        const saved=JSON.parse(await IOUtils.readUTF8(PathUtils.join(Zotero.DataDirectory.dir,"noctua-notes-ui.json")));
+        assert(/^(opus|claude-opus[\w.-]*)$/.test(saved["ui.agent.model.claude"]),"The choice did not reach the settings file");}
       d.getElementById("chat-input").value="Polish the first paragraph";
       d.getElementById("chat-form").dispatchEvent(new win.Event("submit",{bubbles:true,cancelable:true}));
       assert(await wait(()=>d.getElementById("chat-apply")),"Assistant proposal never appeared: "+d.getElementById("chat-log").textContent);
+      {const args=JSON.parse(await IOUtils.readUTF8(PathUtils.join(PathUtils.tempDir,"noctua-fake-args.json")));
+        const at=flag=>args[args.indexOf(flag)+1];
+        assert(/^(opus|claude-opus[\w.-]*)$/.test(at("--model"))&&at("--effort")==="high","The CLI did not receive the chosen model and reasoning: "+JSON.stringify(args));}
       assert(d.getElementById("chat-proposal").textContent.includes("[ATT]")&&d.getElementById("chat-log").textContent.includes("ref.txt"),"The assistant did not receive the attached file");
       assert(d.getElementById("chat-log").textContent.includes("Appended a marker.")&&d.getElementById("chat-proposal").textContent.includes("Edited block "+(at+1)),"Reply or proposal summary missing");
       assert(win.NoctuaNotesEditor.getDocument().blocks[at].src===before.blocks[at].src,"Note changed before the proposal was approved");
@@ -488,6 +563,119 @@ print(json.dumps({"type":"result","subtype":"success","result":"Appended a marke
     assert(!legacyPreviews[3].native.deleted&&!ordinaryNote.deleted,"Cleanup removed an edited preview or ordinary native note");
     assert((await storage.cleanupLegacyPreviews()).trashed===0,"Legacy cleanup is not idempotent");
     result.passed.push("Legacy 0.1/0.3/0.4 previews move to Trash; sources, edited companions and ordinary notes remain intact");
+    // ---- Paper reading assistant (PDF full text + chat in the side pane)
+    {const scriptURI=Zotero.Prefs.get("extensions.noctua-notes.testScript",true);
+      const scriptPath=Services.io.newURI(scriptURI).QueryInterface(Ci.nsIFileURL).file.path;
+      const pdfPath=PathUtils.join(PathUtils.parent(scriptPath),"fixtures","paper.pdf");
+      const attachment=await Zotero.Attachments.importFromFile({file:pdfPath,parentItemID:paper.id});
+      assert(attachment.isPDFAttachment(),"The fixture should import as a PDF attachment");
+      const info=await Zotero.NoctuaNotes.paperContext(paper);
+      assert(info.title.includes("NOCTUA PROTOTYPE")&&info.authors.includes("Ada Lovelace")&&info.year==="2026","Paper metadata was not collected");
+      assert(info.text.includes("Latent world models")&&info.text.includes("48x faster")&&info.text.split("\f").length>=2,"PDF text was not extracted by page: "+JSON.stringify(info.text.slice(0,120)));
+      result.passed.push("Paper text and metadata are extracted from the PDF");
+      // Chat page, hosted like the side pane does, against a fake CLI that reads the paper files.
+      const fake=PathUtils.join(PathUtils.tempDir,"noctua-fake-paper-"+Date.now()+".py");
+      await IOUtils.writeUTF8(fake,`#!/usr/bin/python3
+import sys,json,os
+req=sys.stdin.read()
+paper=open("paper.txt").read()
+tools=sys.argv[sys.argv.index("--tools")+1]
+print(json.dumps({"type":"result","subtype":"success","result":"PAPER-OK tools="+tools+" page2="+str("[Page 2]" in paper)+" claim="+str("48x faster" in paper)+" note="+str(os.path.exists("note.tex")),"session_id":"p1"}))
+`);
+      await IOUtils.setPermissions(fake,0o755);
+      Zotero.Prefs.set("extensions.noctua-notes.agent.claudePath",fake,true);
+      const frame=mainWindow.document.createElementNS("http://www.w3.org/1999/xhtml","iframe");
+      frame.style.cssText="position:fixed;right:0;top:0;width:420px;height:560px;z-index:99998;border:1px solid #888;background:#fff";
+      frame.src="chrome://noctuanotes/content/paper-chat.html";
+      mainWindow.document.documentElement.append(frame);
+      let chatWin=null;
+      for(let n=0;n<200&&!chatWin?.startPaperChat;n++){await new Promise(r=>setTimeout(r,50));chatWin=frame.contentWindow?.wrappedJSObject||frame.contentWindow;}
+      assert(chatWin?.startPaperChat,"The paper chat page did not load");
+      chatWin.startPaperChat(Zotero.NoctuaNotes.paperHost(attachment,mainWindow));
+      const cd=chatWin.document,waitFor=async(test,ms=15000)=>{for(let n=0;n<ms/100&&!test();n++)await new Promise(r=>setTimeout(r,100));return test();};
+      assert(!cd.getElementById("chat").hidden&&cd.getElementById("chat-input").placeholder.includes("paper"),"The paper chat should be open and about the paper");
+      cd.getElementById("chat-input").value="What is the main claim?";
+      cd.getElementById("chat-form").dispatchEvent(new chatWin.Event("submit",{bubbles:true,cancelable:true}));
+      assert(await waitFor(()=>cd.getElementById("chat-log").textContent.includes("PAPER-OK")),"No answer from the paper assistant: "+cd.getElementById("chat-log").textContent);
+      const answer=cd.getElementById("chat-log").textContent;
+      assert(answer.includes("tools=Read,Glob,Grep")&&answer.includes("page2=True")&&answer.includes("claim=True")&&answer.includes("note=False"),"The assistant did not get the paper read-only: "+answer);
+      assert(!cd.getElementById("chat-proposal")||cd.getElementById("chat-proposal").hidden,"A paper chat must not offer note edits");
+      frame.remove();
+      Zotero.Prefs.clear("extensions.noctua-notes.agent.claudePath",true);await IOUtils.remove(fake,{ignoreAbsent:true});
+      result.passed.push("The paper assistant reads the PDF text through read-only tools and answers in the side-pane chat page");
+      // A note under a paper with a PDF: the note assistant reads the paper too.
+      {const noteFake=PathUtils.join(PathUtils.tempDir,"noctua-fake-notepaper-"+Date.now()+".py");
+        await IOUtils.writeUTF8(noteFake,`#!/usr/bin/python3
+import sys,json,os
+req=sys.stdin.read()
+paper=open("paper.txt").read() if os.path.exists("paper.txt") else ""
+note=open("note.tex").read()
+print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK paper="+str("48x faster" in paper)+" note="+str("%%% block" in note)+" prompt="+str("paper.txt: the full text" in req),"session_id":"n1"}))
+`);
+        await IOUtils.setPermissions(noteFake,0o755);
+        Zotero.Prefs.set("extensions.noctua-notes.agent.claudePath",noteFake,true);
+        const noteWin=await Zotero.NoctuaNotes.open({create:true,item:paper});
+        const nd=noteWin.document,waitNote=async(test,ms=15000)=>{for(let n=0;n<ms/100&&!test();n++)await new Promise(r=>setTimeout(r,100));return test();};
+        assert(await waitNote(()=>nd.getElementById("chat-toggle")&&noteWin.NoctuaNotesEditor),"The new note editor did not load");
+        if(nd.getElementById("chat").hidden)nd.getElementById("chat-toggle").click();
+        assert(await waitNote(()=>nd.getElementById("chat-log").textContent.includes("paper's PDF")),"The note chat should say it can read the paper's PDF: "+nd.getElementById("chat-log").textContent);
+        nd.getElementById("chat-input").value="Summarize the paper's claim";
+        nd.getElementById("chat-form").dispatchEvent(new noteWin.Event("submit",{bubbles:true,cancelable:true}));
+        assert(await waitNote(()=>nd.getElementById("chat-log").textContent.includes("NOTE-PAPER-OK")),"No answer from the note assistant: "+nd.getElementById("chat-log").textContent);
+        assert(nd.getElementById("chat-log").textContent.includes("paper=True note=True prompt=True"),"The note assistant did not get the paper text: "+nd.getElementById("chat-log").textContent);
+        Zotero.Prefs.clear("extensions.noctua-notes.agent.claudePath",true);await IOUtils.remove(noteFake,{ignoreAbsent:true});
+        result.passed.push("A note's assistant reads the paper's PDF as reference alongside the note");}
+      // The reading chat belongs to the PDF reader only: the library's item pane does not show it.
+      await mainWindow.ZoteroPane_Local.selectItem(paper.id);
+      const details=mainWindow.document.querySelector("#zotero-item-pane item-details")||[...mainWindow.document.querySelectorAll("item-details")][0];
+      const notesPane=[...details.querySelectorAll("item-pane-custom-section")].find(node=>node.paneID?.includes("noctua-notes"));
+      const libraryChat=[...details.querySelectorAll("item-pane-custom-section")].find(node=>node.paneID?.includes("noctua-chat"));
+      await new Promise(r=>setTimeout(r,500));
+      assert(!libraryChat||libraryChat.hidden,"The Noctua Chat section must not show in the library item pane");
+      assert(![...details.sidenav.querySelectorAll(".btn[data-pane]")].some(button=>button.dataset.pane?.includes("noctua-chat")&&!button.hidden&&button.offsetParent),"The library side nav must not offer the chat button");
+      assert(!notesPane.querySelector("[data-noctua-tab]"),"The notes section should not carry chat tabs");
+      await notesPane.asyncRender();
+      for(let n=0;n<100&&!notesPane.querySelector("[data-noctua-create]");n++)await new Promise(r=>setTimeout(r,50));
+      assert(notesPane.querySelector("[data-noctua-create]"),"The notes section should still list notes");
+      // In the reader it has its own button below Zotero's Notes button, and its own full-pane view.
+      {const reader=await Zotero.Reader.open(attachment.id);
+        const tabID=reader.tabID;
+        let readerDetails=null;
+        for(let n=0;n<200&&!readerDetails;n++){await new Promise(r=>setTimeout(r,100));
+          readerDetails=[...(mainWindow.ZoteroContextPane?.context?._itemPaneDeck?.children||[])].find(el=>el.tabID===tabID);}
+        assert(readerDetails,"The reader's side pane did not appear");
+        const sidenav=mainWindow.document.getElementById("zotero-context-pane-sidenav");
+        const deck=mainWindow.document.getElementById("zotero-context-pane-deck");
+        let wrapper=null;
+        for(let n=0;n<100&&!(wrapper&&!wrapper.hidden);n++){await new Promise(r=>setTimeout(r,100));wrapper=sidenav.querySelector(".noctua-chat-wrapper");}
+        assert(wrapper&&!wrapper.hidden,"The reader side bar should show the Noctua Chat button");
+        const order=[...sidenav.children];
+        const notesAt=order.indexOf(sidenav.querySelector('.btn[data-pane="context-notes"]').parentElement),chatAt=order.indexOf(wrapper),locateAt=order.indexOf(sidenav.querySelector('.btn[data-action="locate"]').parentElement);
+        assert(notesAt<chatAt&&chatAt<locateAt,"The chat button belongs below Notes and above Locate: "+[notesAt,chatAt,locateAt]);
+        assert(order[chatAt-1].classList.contains("divider")&&order[chatAt+1].classList.contains("divider"),"The chat button needs its own divider on both sides");
+        assert(![...readerDetails.querySelectorAll("item-pane-custom-section")].some(node=>node.paneID?.includes("noctua-chat")&&!node.hidden),"The item pane must not repeat the chat once it has its own view");
+        mainWindow.ZoteroContextPane.collapsed=false;
+        wrapper.querySelector(".btn").click();
+        const view=mainWindow.document.getElementById("noctua-chat-view");
+        assert(deck.selectedPanel===view,"Pressing the button should swap the pane for the chat");
+        assert(wrapper.classList.contains("highlight"),"The chat button should look selected");
+        let readerFrame=null;
+        for(let n=0;n<150&&!readerFrame;n++){await new Promise(r=>setTimeout(r,100));readerFrame=view.querySelector("iframe");}
+        assert(readerFrame&&readerFrame.src.endsWith("paper-chat.html"),"The chat view should host the paper assistant");
+        let paneChat=null;for(let n=0;n<200&&!paneChat?.document?.getElementById("chat-log");n++){await new Promise(r=>setTimeout(r,50));paneChat=readerFrame.contentWindow?.wrappedJSObject||readerFrame.contentWindow;}
+        assert(paneChat?.document?.getElementById("chat-input")?.placeholder.includes("paper")&&paneChat.document.getElementById("chat-log").textContent==="","The reader's chat did not start empty");
+        const frameBox=readerFrame.getBoundingClientRect(),deckBox=deck.getBoundingClientRect();
+        result.readerView={frame:[Math.round(frameBox.width),Math.round(frameBox.height)],deck:[Math.round(deckBox.width),Math.round(deckBox.height)]};
+        await new Promise(r=>setTimeout(r,500));
+        {const canvas=mainWindow.document.createElementNS("http://www.w3.org/1999/xhtml","canvas");canvas.width=mainWindow.innerWidth;canvas.height=mainWindow.innerHeight;
+          canvas.getContext("2d").drawWindow(mainWindow,0,0,canvas.width,canvas.height,"white");
+          const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
+          await IOUtils.write(PathUtils.join(PathUtils.parent(Zotero.Prefs.get("extensions.noctua-notes.testResult",true)),"readerview.png"),new Uint8Array(await blob.arrayBuffer()));}
+        wrapper.querySelector(".btn").click();
+        assert(deck.selectedPanel!==view&&!wrapper.classList.contains("highlight"),"Pressing the button again should bring the item pane back");
+        mainWindow.Zotero_Tabs.close(tabID);
+        for(let n=0;n<50&&sidenav.querySelector(".noctua-chat-wrapper:not([hidden])");n++)await new Promise(r=>setTimeout(r,100));}
+      result.passed.push("The reading chat has its own button below Zotero's Notes button and its own full-pane view in the PDF reader");}
     result.sourceKey=session.item.key;
     result.windowTitle=win.document.title;
     result.dataDirectory=Zotero.DataDirectory.dir;

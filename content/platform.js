@@ -1,8 +1,20 @@
 "use strict";
 // The original Noctua ink module uses this tiny settings adapter.
 var store = {
-  get(key) { try { return localStorage.getItem("noctua-zotero."+key); } catch (_) { return null; } },
-  set(key, value) { try { localStorage.setItem("noctua-zotero."+key, value); } catch (_) {} }
+  // chrome:// pages have no localStorage, so the plugin supplies a backend (see bootstrap.js uiState);
+  // until then, and as a last resort, values live in memory for the life of the editor.
+  backend: null, memory: new Map(),
+  attach(backend) { if (backend && typeof backend.get === "function" && typeof backend.set === "function") this.backend = backend; },
+  get(key) {
+    try { if (this.backend) { const value = this.backend.get("ui." + key); if (value !== null && value !== undefined) return value; } } catch (_) {}
+    try { const value = localStorage.getItem("noctua-zotero." + key); if (value !== null) return value; } catch (_) {}
+    return this.memory.has(key) ? this.memory.get(key) : null;
+  },
+  set(key, value) {
+    this.memory.set(key, String(value));
+    try { if (this.backend) { this.backend.set("ui." + key, String(value)); return; } } catch (_) {}
+    try { localStorage.setItem("noctua-zotero." + key, String(value)); } catch (_) {}
+  }
 };
 
 // Appearance is a plugin preference, independent of note content and undo history.

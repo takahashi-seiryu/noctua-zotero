@@ -1,5 +1,6 @@
 pref("extensions.noctua-notes.theme", "light");
 pref("extensions.noctua-notes.previewPosition", "right");
+pref("extensions.noctua-notes.agent.notePaper", true);
 pref("extensions.noctua-notes.contentWidth", 60);
 pref("extensions.noctua-notes.ink.color0", "");
 pref("extensions.noctua-notes.ink.color1", "#3e63dd");

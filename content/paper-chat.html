@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' chrome:; style-src 'self' chrome: 'unsafe-inline'; font-src 'self' chrome:; img-src data: blob: chrome: https://i.ytimg.com; connect-src 'none'; frame-src 'none'; base-uri 'none'" />
+  <title>Noctua Notes — paper chat</title>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css" />
+  <link rel="stylesheet" href="editor.css" />
+</head>
+<body class="embedded">
+  <button id="chat-toggle" type="button" hidden="hidden" aria-hidden="true" tabindex="-1"></button>
+  <aside id="chat" aria-label="Paper assistant">
+    <div id="chat-resizer" class="chat-resizer" role="separator" aria-orientation="vertical" aria-label="Resize assistant panel" tabindex="0"></div>
+    <div class="chat-head">
+      <select id="chat-provider" aria-label="Assistant provider" hidden="hidden"></select>
+      <div id="chat-provider-ui" class="chat-provider-ui" role="group" aria-label="Assistant provider"></div>
+      <span class="chat-spacer"></span>
+      <button id="chat-history-toggle" class="icon-btn" type="button" aria-label="Conversation history" title="History" aria-haspopup="true" aria-expanded="false"><span data-icon="history"></span></button>
+      <button id="chat-new" class="icon-btn" type="button" aria-label="New conversation" title="New conversation"><span data-icon="plus"></span></button>
+      <button id="chat-close" class="icon-btn" type="button" aria-label="Close assistant" title="Close"><span data-icon="x"></span></button>
+    </div>
+    <div id="chat-history" class="chat-history" hidden="hidden"></div>
+    <div id="chat-log" role="log" aria-live="polite"></div>
+    <div id="chat-proposal" hidden="hidden"></div>
+    <div id="chat-model-pop" class="chat-model-pop" role="dialog" aria-label="Model and reasoning" hidden="hidden">
+      <div class="cmp-models">
+        <input id="chat-model-search" class="cmp-search" type="search" placeholder="Search models…" aria-label="Search models" spellcheck="false" />
+        <div id="chat-model-list" class="cmp-list" role="listbox" aria-label="Models"></div>
+      </div>
+      <div class="cmp-efforts">
+        <div class="cmp-head"><span>Reasoning</span><span id="chat-model-current" class="cmp-current"></span></div>
+        <div id="chat-effort-list" class="cmp-list" role="listbox" aria-label="Reasoning"></div>
+      </div>
+    </div>
+    <form id="chat-form">
+      <div id="chat-attachments" class="chat-attachments" hidden="hidden"></div>
+      <textarea id="chat-input" rows="2" aria-label="Message the assistant" placeholder="Ask about this paper. / commands, $ skills" spellcheck="false"></textarea>
+      <div class="chat-composer-bar">
+        <button id="chat-attach" class="icon-btn" type="button" aria-label="Attach files or images" title="Attach files or images"><span data-icon="paperclip"></span></button>
+        <input id="chat-file" type="file" multiple hidden="hidden" />
+        <button id="chat-fast" class="icon-btn chat-fast" type="button" aria-pressed="false" aria-label="Fast mode" title="Fast mode" hidden="hidden"><span data-icon="zap"></span></button>
+        <button id="chat-model" class="chat-model-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Model and reasoning" title="Model and reasoning"><span class="chat-model-name">Default</span><span data-icon="chevron-down"></span></button>
+        <button id="chat-send" class="icon-btn" type="submit" aria-label="Send" title="Send (Enter)"></button>
+      </div>
+    </form>
+  </aside>
+  <script src="platform.js"></script>
+  <script src="icons.js"></script>
+  <script src="chat.js"></script>
+  <script src="paper-chat.js"></script>
+</body>
+</html>

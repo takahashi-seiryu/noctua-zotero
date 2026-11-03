@@ -201,7 +201,28 @@ body.chat-open{padding-right:var(--chat-width,460px)}
 #chat-form:focus-within{border-color:var(--np-link);box-shadow:0 0 0 3px color-mix(in srgb,var(--np-link) 18%,transparent)}
 #chat-input{resize:none;min-height:48px;max-height:200px;padding:2px 4px 0 0;border:0;border-radius:0;background:transparent;font:14px/1.5 var(--font-ui);outline:none}
 #chat-input:focus-visible{outline:none}
-.chat-composer-bar{display:flex;align-items:center;justify-content:space-between}
+.chat-composer-bar{display:flex;align-items:center;gap:6px}
+.chat-model-btn{margin-left:auto;display:inline-flex;align-items:center;gap:4px;max-width:70%;min-height:30px;padding:2px 8px;border:0;border-radius:8px;background:transparent;color:var(--np-muted);font:500 12.5px var(--font-ui)}
+.chat-model-btn:hover,.chat-model-btn[aria-expanded="true"]{background:var(--np-line);color:var(--np-ink)}
+.chat-model-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.chat-model-btn svg{width:13px;height:13px;flex:none}
+.chat-model-pop{position:fixed;z-index:80;display:flex;max-height:min(420px,70vh);background:var(--np-page);border:1px solid var(--np-line);border-radius:12px;box-shadow:0 14px 40px #0003;overflow:hidden}
+.chat-model-pop[hidden]{display:none}
+.cmp-models{flex:1.25;min-width:0;display:flex;flex-direction:column;padding:10px;border-right:1px solid var(--np-line)}
+.cmp-efforts{flex:1;min-width:0;display:flex;flex-direction:column;padding:10px}
+.cmp-search{margin:0 0 6px;padding:7px 10px;border:0;border-bottom:1px solid var(--np-line);border-radius:0;background:transparent;color:var(--np-ink);font:13px var(--font-ui);outline:none}
+.cmp-search:focus,.cmp-search:focus-visible{border-bottom-color:var(--np-link);outline:none;box-shadow:none}
+.cmp-head{display:flex;justify-content:space-between;gap:8px;padding:8px 10px 6px;font:600 12px var(--font-ui);color:var(--np-muted);border-bottom:1px solid var(--np-line);margin-bottom:6px}
+.cmp-current{font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-list{overflow:auto;min-height:0}
+.cmp-row{display:flex;align-items:center;gap:8px;width:100%;min-height:32px;padding:5px 10px;border:0;border-radius:8px;background:transparent;color:var(--np-ink);font:13.5px var(--font-ui);text-align:left}
+.cmp-row:hover,.cmp-row:focus-visible{background:var(--np-raise);outline:none}
+.cmp-row .chat-provider-icon{width:15px;height:15px;flex:none}
+.cmp-row .cmp-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.cmp-row .cmp-tag{font-size:11.5px;color:var(--np-muted)}
+.cmp-row .cmp-check{width:14px;height:14px;flex:none;color:var(--np-muted);visibility:hidden}
+.cmp-row[aria-selected="true"] .cmp-check{visibility:visible}
+.cmp-empty{padding:10px;font-size:12px;color:var(--np-muted)}
 #chat-attach{width:32px;height:32px;min-height:32px;color:var(--np-muted)}
 #chat-form.dragging{border-color:var(--np-link);background:color-mix(in srgb,var(--np-link) 8%,var(--np-raise))}
 .chat-attachments{display:flex;flex-wrap:wrap;gap:6px}
@@ -247,3 +268,27 @@ html:not([data-preview="below"]) .nb.has-video .text-layout,html:not([data-previ
 @keyframes tex-flash{0%{background:color-mix(in srgb,var(--np-link) 24%,transparent)}100%{background:transparent}}
 .tex-flash{animation:tex-flash 1.5s ease-out;border-radius:6px}
 @media(prefers-reduced-motion:reduce){.tex-flash{animation:none;background:color-mix(in srgb,var(--np-link) 14%,transparent)}}
+
+/* The paper assistant fills its frame in Zotero's side pane. */
+body.embedded{margin:0;height:100vh;overflow:hidden;padding:0}
+body.embedded #chat{position:static;width:100%;height:100vh;border-left:0}
+body.embedded .chat-resizer,body.embedded #chat-close,body.embedded #chat-toggle{display:none}
+
+.slash-pop{position:fixed;z-index:85;max-height:260px;overflow:auto;padding:4px;background:var(--np-page);border:1px solid var(--np-line);border-radius:12px;box-shadow:0 10px 30px #0003;box-sizing:border-box}
+.slash-row{display:flex;align-items:baseline;gap:8px;padding:6px 10px;border-radius:8px;cursor:pointer}
+.slash-row[aria-selected="true"]{background:var(--np-raise)}
+.slash-name{flex:none;font:600 13px ui-monospace,monospace;color:var(--np-ink)}
+.slash-desc{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font:12.5px var(--font-ui);color:var(--np-muted)}
+.slash-tag{flex:none;font:11px var(--font-ui);color:var(--np-muted);padding:0 6px;border-radius:5px;background:var(--np-raise)}
+
+.chat-fast{width:30px;height:30px;min-height:30px;color:var(--np-muted);border-radius:8px}
+.chat-fast[hidden]{display:none}
+/* The button never changes its background; only the icon colour shows the state. */
+.chat-fast,.chat-fast:hover:not(:disabled),.chat-fast[aria-pressed="true"]{background:transparent}
+.chat-fast:hover:not(:disabled){color:var(--np-ink)}
+.chat-fast[aria-pressed="true"],.chat-fast[aria-pressed="true"]:hover:not(:disabled){color:#d97706}
+.chat-fast[aria-pressed="true"] svg{fill:currentColor}
+.chat-fast:disabled{opacity:.4;cursor:default}
+
+.cmp-more{display:block;width:100%;margin-top:2px;padding:6px 10px;border:0;border-radius:8px;background:transparent;color:var(--np-muted);font:13px var(--font-ui);text-align:left;cursor:pointer}
+.cmp-more:hover{background:var(--np-raise);color:var(--np-ink)}

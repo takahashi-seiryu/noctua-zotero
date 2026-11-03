@@ -14,8 +14,28 @@ async function startup({id, version, rootURI}) {
   Services.scriptloader.loadSubScript(rootURI + "lib/references.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/activation.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/pane.js", scope);
+  Services.scriptloader.loadSubScript(rootURI + "lib/readerchat.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/settings.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/agent.js", scope);
+  // Editor UI state (assistant width, history, last provider and model, pen…). The chrome:// editor
+  // page has no localStorage, so the plugin keeps these values in one small file in the data directory.
+  const uiPath = Zotero.DataDirectory?.dir ? PathUtils.join(Zotero.DataDirectory.dir, "noctua-notes-ui.json") : null;
+  let uiData = {}, uiTimer = null;
+  try { if (!uiPath) throw new Error("no data directory"); const parsed = JSON.parse(await IOUtils.readUTF8(uiPath)); if (parsed && typeof parsed === "object") uiData = parsed; } catch (_) {}
+  const uiState = {
+    get: key => Object.hasOwn(uiData, key) ? uiData[key] : null,
+    set(key, value) {
+      if (typeof key !== "string" || key.length > 200 || typeof value !== "string" || value.length > 2000000) return;
+      uiData[key] = value;
+      clearTimeout(uiTimer);
+      uiTimer = setTimeout(() => this.flush(), 400);
+    },
+    async flush() {
+      clearTimeout(uiTimer); uiTimer = null;
+      if (!uiPath) return;
+      try { await IOUtils.writeUTF8(uiPath, JSON.stringify(uiData), {tmpPath: uiPath + ".tmp"}); } catch (error) { Zotero.logError(error); }
+    }
+  };
   const settings = await scope.NoctuaNotesSettings.create({Zotero, pluginID:id, rootURI});
   const uuid = () => Services.uuid.generateUUID().toString().slice(1,-1);
   const storage = new scope.NoctuaNotesStorage({Zotero, IOUtils, PathUtils, model:scope.NoctuaNotesModel, uuid});
@@ -25,12 +45,14 @@ async function startup({id, version, rootURI}) {
     agent: scope.NoctuaAgent.create({
       Subprocess: ChromeUtils.importESModule("resource://gre/modules/Subprocess.sys.mjs").Subprocess,
       IOUtils, PathUtils, Zotero,
+      realpath: path => { const file = Cc["@mozilla.org/file/local;1"].createInstance(Ci.nsIFile); file.initWithPath(path); file.normalize(); return file.path; },
       tempBase: Services.dirsvc.get("TmpD", Ci.nsIFile).path,
       home: Services.dirsvc.get("Home", Ci.nsIFile).path,
       env: {PATH: Services.env.get("PATH") || ""},
       makeId: () => "b" + uuid()
     }),
     appearance: settings.appearance,
+    uiState,
     selectedLibraryID(owner) {
       const pane=owner.ZoteroPane_Local || owner.ZoteroPane;
       if(typeof pane.getSelectedLibraryIDs==="function")return pane.getSelectedLibraryIDs()[0] ?? Zotero.Libraries.userLibraryID;
@@ -54,6 +76,47 @@ async function startup({id, version, rootURI}) {
       style.id="noctua-notes-tab-icon";
       style.textContent=`.icon.icon-item-type[data-item-type="${this.tabIconName}"], .icon-item-type[data-item-type="${this.tabIconName}"]{background:url("chrome://noctuanotes/content/icons/noctua-notes.svg") no-repeat center/contain !important}`;
       document.documentElement.append(style);
+    },
+    // The text of a paper's PDF with its metadata and the reader's highlights, for the reading assistant.
+    async paperContext(item) {
+      const attachment = item.isPDFAttachment?.() ? item
+        : item.getAttachments().map(id => Zotero.Items.get(id)).find(a => a && !a.deleted && a.isPDFAttachment());
+      if (!attachment) throw new Error("This item has no PDF to read.");
+      const parent = attachment.parentID ? Zotero.Items.get(attachment.parentID) : (item.isRegularItem() ? item : null);
+      const result = await Zotero.PDFWorker.getFullText(attachment.id, null, true);
+      if (!result?.text?.trim()) throw new Error("This PDF has no text layer to read (it may be a scan).");
+      const field = name => { try { return parent?.getField(name) || ""; } catch (_) { return ""; } };
+      const annotations = [];
+      try {
+        for (const note of attachment.getAnnotations().slice(0, 300)) {
+          annotations.push({page: note.annotationPageLabel || "", type: note.annotationType,
+            text: (note.annotationText || "").slice(0, 600), comment: (note.annotationComment || "").slice(0, 600)});
+        }
+      } catch (_) {}
+      return {
+        title: field("title") || attachment.getField("title"),
+        authors: (parent?.getCreators?.() || []).map(c => c.name || [c.firstName, c.lastName].filter(Boolean).join(" ")).filter(Boolean).slice(0, 30),
+        year: field("date").match(/\b\d{4}\b/)?.[0] || "", venue: field("publicationTitle") || field("proceedingsTitle"),
+        doi: field("DOI"), abstract: field("abstractNote").slice(0, 3000),
+        text: result.text, annotations
+      };
+    },
+    // What the paper assistant page needs from the plugin (it is a plain page inside Zotero's side pane).
+    paperHost(item, owner) {
+      const parent = item.isAttachment() && item.parentID ? Zotero.Items.get(item.parentID) : null;
+      const sessionId = "paper-" + item.libraryID + "-" + (parent?.key || item.key);
+      return {
+        session: {id: sessionId}, appearance: this.appearance, ui: this.uiState,
+        agent: {
+          providers: () => this.agent.providers(),
+          models: provider => this.agent.models(provider),
+          skills: provider => this.agent.skills(provider),
+          reset: () => this.agent.forget(sessionId),
+          run: options => this.agent.run({...options, mode: "paper", sessionKey: sessionId, paper: () => this.paperContext(item), context: {}})
+        },
+        openURL: url => { if (/^(https?:|mailto:)/i.test(url)) Zotero.launchURL(url); },
+        onError: error => Zotero.logError(error)
+      };
     },
     async referenceIndex(libraryID) {
       const items = await Zotero.Items.getAll(libraryID, true, false, false);
@@ -222,12 +285,18 @@ async function startup({id, version, rootURI}) {
         owner.Zotero_Tabs.tabHooks.getTitle.noctuanotes = async current => this.tabs.get(current.id)?.title || "Noctua Notes";
         owner.Zotero_Tabs.tabHooks.refocus.noctuanotes = current => this.tabs.get(current.id)?.editorWindow?.focus();
         const references=await this.referenceIndex(libraryID);
-        const args = {session, doc, draft, storage, model:scope.NoctuaNotesModel, references, imported:!!imported,
-          appearance:this.appearance,
+        // The note assistant may read the paper's PDF too (a setting; off keeps the text on this computer).
+        const readsPaper = !!parent?.isRegularItem?.() && Zotero.Prefs.get("extensions.noctua-notes.agent.notePaper", true) !== false
+          && parent.getAttachments().some(id => { const a = Zotero.Items.get(id); return a && !a.deleted && a.isPDFAttachment(); });
+        const args = {session, doc, draft, storage, model:scope.NoctuaNotesModel, references, imported:!!imported, hasPaper:readsPaper,
+          appearance:this.appearance, ui:this.uiState,
           agent:{
             providers:() => this.agent.providers(),
+            models:provider => this.agent.models(provider),
+            skills:provider => this.agent.skills(provider),
             reset:() => this.agent.forget(session.id),
-            run:options => this.agent.run({...options, sessionKey:session.id, context:{
+            run:options => this.agent.run({...options, sessionKey:session.id,
+              paper: readsPaper ? () => this.paperContext(parent) : null, context:{
               paperTitle:parent?.getField("title") || "",
               authors:(parent?.getCreators?.() || []).map(creator => creator.name || [creator.firstName, creator.lastName].filter(Boolean).join(" ")).filter(Boolean).slice(0, 12)
             }})
@@ -297,7 +366,22 @@ async function startup({id, version, rootURI}) {
   });
   NoctuaNotes.uninstallNativeNotes=scope.NoctuaNotesActivation.installNotes({Zotero,storage,open:args=>NoctuaNotes.open(args)});
   NoctuaNotes.unregisterPane=scope.NoctuaNotesPane.register({Zotero,pluginID:id,storage,
-    open:args=>NoctuaNotes.open(args),create:args=>NoctuaNotes.open({...args,create:true})});
+    open:args=>NoctuaNotes.open(args),create:args=>NoctuaNotes.open({...args,create:true}),
+    chat:{
+      host:(item,owner)=>NoctuaNotes.paperHost(item,owner),
+      // When the reader side bar has its own Noctua Chat view, the item-pane section stays out of the way.
+      separate:()=>NoctuaNotes.readerChats.size>0
+    }});
+  NoctuaNotes.readerChats = new Map();
+  NoctuaNotes.installReaderChat = window => {
+    if (NoctuaNotes.readerChats.has(window) || window.closed) return;
+    try {
+      const handle = scope.NoctuaReaderChat.install({window, Zotero, host:(item, owner) => NoctuaNotes.paperHost(item, owner),
+        icon:"chrome://noctuanotes/content/icons/noctua-chat.svg", darkIcon:"chrome://noctuanotes/content/icons/noctua-chat-dark.svg", title:"Noctua Chat"});
+      if (handle) NoctuaNotes.readerChats.set(window, handle);
+    } catch (error) { Zotero.logError(error); }
+  };
+  Zotero.uiReadyPromise?.then(() => { for (const window of Zotero.getMainWindows()) NoctuaNotes?.installReaderChat(window); });
   Zotero.NoctuaNotes = NoctuaNotes;
   // Zotero picks an item-tree icon from getItemTypeIconName(); give Noctua sources their own.
   const itemProto = Zotero.Item?.prototype;
@@ -377,11 +461,14 @@ function install() {}
 function uninstall() {}
 function onMainWindowLoad({window}) {
   NoctuaNotes?.loadLocalization(window);
+  Zotero.uiReadyPromise?.then(() => NoctuaNotes?.installReaderChat(window));
 }
 async function shutdown() {
   if (NoctuaNotes) {
     NoctuaNotes.settings?.destroy();
     NoctuaNotes.unregisterPane?.();
+    for (const handle of NoctuaNotes.readerChats?.values() || []) { try { handle.destroy(); } catch (error) { Zotero.logError(error); } }
+    NoctuaNotes.readerChats?.clear();
     NoctuaNotes.uninstallNativeNotes?.();
     try {await NoctuaNotes.agent?.cleanup();} catch(error) {Zotero.logError(error);}
     for(const uninstall of NoctuaNotes.activationHooks.values())uninstall();
@@ -401,6 +488,7 @@ async function shutdown() {
       }
     }
     NoctuaNotes.restoreItemIcon?.();
+    NoctuaNotes.uiState?.flush();
     delete Zotero.NoctuaNotes;
     NoctuaNotes = undefined;
   }
@@ -417,6 +505,8 @@ function onMainWindowUnload({window}) {
   }
   NoctuaNotes.owners.delete(window);
   NoctuaNotes.localizationWindows.delete(window);
+  try { NoctuaNotes.readerChats?.get(window)?.destroy(); } catch (_) {}
+  NoctuaNotes.readerChats?.delete(window);
   NoctuaNotes.activationHooks.get(window)?.();
   NoctuaNotes.activationHooks.delete(window);
 }

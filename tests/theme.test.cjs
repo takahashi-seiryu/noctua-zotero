@@ -106,3 +106,15 @@ test("menu export finishes active ink and validates a copy without marking the e
   f.window.emit('unload');assert.equal(f.calls.drafts.length,1);
   assert.equal(f.calls.drafts[0][1].blocks[0].strokes.length,1);
 });
+
+test("the editor's settings store works without localStorage by using the plugin-provided backend",()=>{
+  const ctx=vm.createContext({localStorage:{getItem(){throw new Error("not available");},setItem(){throw new Error("not available");}}});
+  vm.runInContext(fs.readFileSync(require.resolve("../content/platform.js"),"utf8")+";this.store=store;",ctx);
+  const store=ctx.store;
+  store.set("a","1");assert.equal(store.get("a"),"1");              // memory fallback keeps the session working
+  const saved={};store.attach({get:key=>key in saved?saved[key]:null,set:(key,value)=>{saved[key]=value;}});
+  store.set("agent.width","480");
+  assert.equal(saved["ui.agent.width"],"480");assert.equal(store.get("agent.width"),"480");
+  assert.equal(store.get("missing"),null);
+  store.attach({});store.set("b","2");assert.equal(saved["ui.b"],"2");  // an invalid backend is ignored
+});

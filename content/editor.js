@@ -151,6 +151,7 @@ function texKeys(e, ta) {
 
 window.startNoctuaNotes = function (host) {
   const $ = id => document.getElementById(id);
+  store.attach?.(host?.ui);
   NoctuaIcons.hydrate();
   NoctuaAppearance.mount({
     appearance: host?.appearance, document, window,
