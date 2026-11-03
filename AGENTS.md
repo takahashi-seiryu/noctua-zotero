@@ -25,25 +25,7 @@ Do not invent custom Zotero database item types.
 
 ## Git and pull requests
 
-`main` accepts changes only through pull requests, merged with **squash**. The PR title becomes the
-commit on `main`, so one PR is one feature-sized commit. Early development: keep commits few and large.
-
-Title (PR and commit), imperative, lower-case after the type, no trailing period, no version number:
-
-```
-<type>: <what changed>        e.g. feat: paper reading chat in the PDF reader
-```
-
-Types: `feat` (new behavior), `fix` (bug), `docs`, `test`, `refactor`, `chore` (build, release, tooling), `ci` (workflows).
-Use an optional scope for a narrow change, e.g. `fix(chat): keep the Fast button background`.
-Append `!` after the type for a breaking change to saved notes or settings.
-
-PR body follows `.github/pull_request_template.md`, kept compact:
-
-- **Summary**: one or two sentences, what and why.
-- **Main changes**: the few changes that matter.
-- **Minor changes**: small fixes, docs, tests; "None" if empty.
-- **Validation**: commands run and results, plus any manual check.
-
-Releases need no PR and only the repository owner can run them: run **Actions → Release → Run workflow**
-(default bump: patch, e.g. 0.1.0 → 0.1.1) or push a `vX.Y.Z` tag on a `main` commit. Do not edit `version` by hand.
+- `main` changes only through pull requests, merged with squash; the PR title becomes the commit. Keep PRs feature-sized.
+- Title: `<type>: <what changed>` (imperative, no period, no version). Types: `feat`, `fix`, `docs`, `test`, `refactor`, `chore`, `ci`; optional scope `fix(chat): …`; `!` for breaking changes.
+- PR body: follow `.github/pull_request_template.md`, kept compact.
+- Releases need no PR and are owner-only; see the README. Never edit `version` by hand.
