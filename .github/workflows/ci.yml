@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm test
+      - run: python3 scripts/build.py
+
+  title:
+    name: pr-title
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check the PR title follows "<type>: <summary>"
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          pattern='^(feat|fix|docs|test|refactor|chore|ci)(\([a-z0-9-]+\))?!?: [^ ].*[^.]$'
+          if ! printf '%s' "$TITLE" | grep -Eq "$pattern"; then
+            echo "PR title must look like: feat: add something  (types: feat fix docs test refactor chore ci; optional scope and !; no trailing period)"
+            echo "Got: $TITLE"
+            exit 1
+          fi
