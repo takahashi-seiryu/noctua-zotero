@@ -223,6 +223,61 @@ var NoctuaChat = {
       }
       renderAttachments();
     }
+    // ------------------------------------------------------------ photos from the iPhone (over Tailscale)
+    const phoneBtn = $("chat-phone"), phonePop = $("chat-phone-pop"), phoneNote = $("chat-phone-note"), phoneQR = $("chat-phone-qr");
+    let phoneSession = null, phoneToken = 0;
+    function drawQR(url) {
+      const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+      const n = qr.getModuleCount(), quiet = 3, ns = "http://www.w3.org/2000/svg";
+      const svg = document.createElementNS(ns, "svg");
+      svg.setAttribute("viewBox", `0 0 ${n + quiet * 2} ${n + quiet * 2}`); svg.setAttribute("shape-rendering", "crispEdges");
+      svg.setAttribute("width", "184"); svg.setAttribute("height", "184");
+      const back = document.createElementNS(ns, "rect"); back.setAttribute("width", "100%"); back.setAttribute("height", "100%"); back.setAttribute("fill", "#fff");
+      let d = "";
+      for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) if (qr.isDark(r, c)) d += `M${c + quiet} ${r + quiet}h1v1h-1z`;
+      const path = document.createElementNS(ns, "path"); path.setAttribute("d", d); path.setAttribute("fill", "#000");
+      svg.append(back, path); phoneQR.replaceChildren(svg);
+    }
+    function placePhonePopover() {
+      const panel = $("chat").getBoundingClientRect(), anchor = phoneBtn.getBoundingClientRect();
+      const width = Math.min(260, panel.width - 24);
+      phonePop.style.width = width + "px";
+      phonePop.style.left = Math.max(panel.left + 12, Math.min(anchor.left, panel.right - width - 12)) + "px";
+      phonePop.style.bottom = (window.innerHeight - anchor.top + 6) + "px";
+    }
+    function closePhone() {
+      phoneToken++;
+      if (phoneSession) { try { phoneSession.stop(); } catch (_) {} phoneSession = null; }
+      try { agent.phone?.stop(); } catch (_) {}
+      phonePop.hidden = true; phoneBtn.setAttribute("aria-expanded", "false"); phoneQR.replaceChildren();
+    }
+    async function openPhone() {
+      const mine = ++phoneToken;
+      phonePop.hidden = false; phoneBtn.setAttribute("aria-expanded", "true"); placePhonePopover();
+      phoneQR.replaceChildren(); phoneNote.textContent = "Starting…";
+      let received = 0;
+      try {
+        const session = await agent.phone.start(photo => {
+          if (attached.length >= MAX_FILES) { report(new Error(`Attach at most ${MAX_FILES} files per message.`)); return; }
+          attached.push({name: photo.name, type: photo.type, data: photo.data, preview: `data:${photo.type};base64,${photo.data}`});
+          renderAttachments(); received++;
+          phoneNote.textContent = `${received} photo${received === 1 ? "" : "s"} received. Take more or close this.`;
+        }, {onEnd: () => { if (mine === phoneToken) { phoneNote.textContent = "The session ended after 10 idle minutes."; phoneQR.replaceChildren(); } }});
+        if (mine !== phoneToken) { session.stop(); return; }
+        phoneSession = session;
+        drawQR(session.url);
+        phoneNote.textContent = "Scan with your iPhone camera, then take photos.";
+      } catch (error) { if (mine === phoneToken) phoneNote.textContent = String(error.message || error); }
+    }
+    if (agent?.phone) {
+      phoneBtn.hidden = false;
+      phoneBtn.addEventListener("click", () => { if (phonePop.hidden) openPhone(); else closePhone(); });
+      document.addEventListener("pointerdown", event => { if (!phonePop.hidden && !phonePop.contains(event.target) && !phoneBtn.contains(event.target)) closePhone(); });
+      document.addEventListener("keydown", event => { if (event.key === "Escape" && !phonePop.hidden) { event.preventDefault(); closePhone(); phoneBtn.focus(); } }, true);
+      window.addEventListener("resize", () => { if (!phonePop.hidden) placePhonePopover(); });
+      window.addEventListener("pagehide", closePhone);
+    }
+
     $("chat-attach").addEventListener("click", () => fileInput.click());
     fileInput.addEventListener("change", () => { addFiles(fileInput.files).catch(report); fileInput.value = ""; });
     const form = $("chat-form");
@@ -499,6 +554,7 @@ var NoctuaChat = {
       log.scrollTop = log.scrollHeight;
     }
     async function submit() {
+      if (typeof closePhone === "function") closePhone();
       const text = input.value.trim();
       if (running || (!text && !attached.length)) return;
       let provider = select.value;

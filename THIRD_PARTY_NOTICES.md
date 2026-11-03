@@ -23,3 +23,6 @@
   Copyright (c) 2026 Lucide Icons and Contributors; ISC license. The moon icon
   also carries the Feather MIT attribution. Both licenses are retained in
   `content/icons/LICENSE`.
+- `content/vendor/qrcode/qrcode.js` is [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) 2.0.4
+  (Kazuhiko Arase, MIT; license in `content/vendor/qrcode/LICENSE`). "QR Code" is a registered trademark of DENSO WAVE INCORPORATED.
+- The inline `smartphone` icon is official Lucide artwork (ISC), same source and treatment as the other icons.

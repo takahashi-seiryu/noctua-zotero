@@ -17,6 +17,7 @@ async function startup({id, version, rootURI}) {
   Services.scriptloader.loadSubScript(rootURI + "lib/readerchat.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/settings.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/agent.js", scope);
+  Services.scriptloader.loadSubScript(rootURI + "lib/phonecam.js", scope);
   // Editor UI state (assistant width, history, last provider and model, pen…). The chrome:// editor
   // page has no localStorage, so the plugin keeps these values in one small file in the data directory.
   const uiPath = Zotero.DataDirectory?.dir ? PathUtils.join(Zotero.DataDirectory.dir, "noctua-notes-ui.json") : null;
@@ -51,6 +52,13 @@ async function startup({id, version, rootURI}) {
       env: {PATH: Services.env.get("PATH") || ""},
       makeId: () => "b" + uuid()
     }),
+    // Photos from the iPhone arrive over Tailscale and become chat attachments.
+    makePhone: extra => scope.NoctuaPhoneCamera.create({
+      Cc, Ci, Services, Zotero, IOUtils,
+      Subprocess: ChromeUtils.importESModule("resource://gre/modules/Subprocess.sys.mjs").Subprocess, ...extra
+    }),
+    phoneModule: scope.NoctuaPhoneCamera,
+    getPhone() { return this.phone ||= this.makePhone({}); },
     appearance: settings.appearance,
     uiState,
     selectedLibraryID(owner) {
@@ -112,6 +120,7 @@ async function startup({id, version, rootURI}) {
           models: provider => this.agent.models(provider),
           skills: provider => this.agent.skills(provider),
           reset: () => this.agent.forget(sessionId),
+          phone: {start: (onPhoto, options) => this.getPhone().start(onPhoto, options), stop: () => this.getPhone().stop()},
           run: options => this.agent.run({...options, mode: "paper", sessionKey: sessionId, paper: () => this.paperContext(item), context: {}})
         },
         openURL: url => { if (/^(https?:|mailto:)/i.test(url)) Zotero.launchURL(url); },
@@ -295,6 +304,7 @@ async function startup({id, version, rootURI}) {
             models:provider => this.agent.models(provider),
             skills:provider => this.agent.skills(provider),
             reset:() => this.agent.forget(session.id),
+            phone:{start:(onPhoto, options) => this.getPhone().start(onPhoto, options), stop:() => this.getPhone().stop()},
             run:options => this.agent.run({...options, sessionKey:session.id,
               paper: readsPaper ? () => this.paperContext(parent) : null, context:{
               paperTitle:parent?.getField("title") || "",
@@ -470,6 +480,7 @@ async function shutdown() {
     for (const handle of NoctuaNotes.readerChats?.values() || []) { try { handle.destroy(); } catch (error) { Zotero.logError(error); } }
     NoctuaNotes.readerChats?.clear();
     NoctuaNotes.uninstallNativeNotes?.();
+    try {NoctuaNotes.phone?.stop();} catch(error) {Zotero.logError(error);}
     try {await NoctuaNotes.agent?.cleanup();} catch(error) {Zotero.logError(error);}
     for(const uninstall of NoctuaNotes.activationHooks.values())uninstall();
     NoctuaNotes.activationHooks.clear();
