@@ -45,4 +45,5 @@ PR body follows `.github/pull_request_template.md`, kept compact:
 - **Minor changes**: small fixes, docs, tests; "None" if empty.
 - **Validation**: commands run and results, plus any manual check.
 
-Releases are separate: bump `version`, merge the PR, then run `scripts/release.sh` from `main`.
+Releases are separate and never part of a feature PR: after merging, run **Actions → Release → Run workflow**
+(default bump: patch, e.g. 0.1.0 → 0.1.1) or push a `vX.Y.Z` tag on a `main` commit. Do not edit `version` by hand.

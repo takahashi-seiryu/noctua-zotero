@@ -51,6 +51,8 @@ python3 scripts/test-zotero.py    # integration test in an isolated Zotero (neve
 ```
 
 The integration test needs a separate copy of the Zotero app named `Noctua Notes Test.app` (recorded in `.test-app-path`).
-To release: bump `version` in `manifest.json` and `package.json`, commit, push, run `scripts/release.sh`.
+Releases are built by GitHub Actions from `main`: **Actions → Release → Run workflow** publishes the next patch version
+(`0.1.0` → `0.1.1`; choose minor or major if needed), or push a tag `vX.Y.Z` on a `main` commit. The version comes from
+the latest release/tag and is stamped into the build, so `version` in `manifest.json` only labels local builds.
 Vendored KaTeX and the LaTeX/ink code keep their upstream licences ([third-party notices](THIRD_PARTY_NOTICES.md)).
 Not yet included: PDF-annotation drag-in, note-link search, handwriting recognition.
