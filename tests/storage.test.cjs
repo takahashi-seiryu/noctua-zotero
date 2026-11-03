@@ -57,12 +57,14 @@ async function bootstrapForStorage(f) {
   const Zotero=Object.assign(f.Z,{initializationPromise:Promise.resolve(),getMainWindows:()=>[],
     Prefs:{get:()=>undefined},MenuManager:{registerMenu(){}}});
   const context={Zotero,TextEncoder,TextDecoder,IOUtils:f.io,PathUtils:{join:path.join,parent:path.dirname},
+    ChromeUtils:{importESModule:()=>({Subprocess:{}})},
     Cc:{'@mozilla.org/addons/addon-manager-startup;1':{getService:()=>({registerChrome:()=>({destruct(){}})})}},Ci:{},
-    Services:{io:{newURI:uri=>uri},uuid:{},scriptloader:{loadSubScript(uri,scope){
+    Services:{io:{newURI:uri=>uri},uuid:{},dirsvc:{get:()=>({path:'/tmp'})},env:{get:()=>''},scriptloader:{loadSubScript(uri,scope){
       if(uri.endsWith('/model.js'))scope.NoctuaNotesModel=model;
       if(uri.endsWith('/storage.js'))scope.NoctuaNotesStorage=function(){return f.storage;};
       if(uri.endsWith('/settings.js'))scope.NoctuaNotesSettings={create:async()=>({appearance:{}})};
       if(uri.endsWith('/activation.js'))scope.NoctuaNotesActivation={installNotes:()=>()=>{}};
+      if(uri.endsWith('/agent.js'))scope.NoctuaAgent={create:()=>({cleanup:async()=>{},providers:async()=>[],run(){},forget(){}})};
       if(uri.endsWith('/pane.js'))scope.NoctuaNotesPane={register:()=>()=>{}};
     }}}};
   vm.createContext(context);

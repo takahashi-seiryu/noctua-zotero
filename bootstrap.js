@@ -15,12 +15,21 @@ async function startup({id, version, rootURI}) {
   Services.scriptloader.loadSubScript(rootURI + "lib/activation.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/pane.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/settings.js", scope);
+  Services.scriptloader.loadSubScript(rootURI + "lib/agent.js", scope);
   const settings = await scope.NoctuaNotesSettings.create({Zotero, pluginID:id, rootURI});
   const uuid = () => Services.uuid.generateUUID().toString().slice(1,-1);
   const storage = new scope.NoctuaNotesStorage({Zotero, IOUtils, PathUtils, model:scope.NoctuaNotesModel, uuid});
   NoctuaNotes = {
     id, version, rootURI, storage, model:scope.NoctuaNotesModel, tabs:new Map(), owners:new Set(), localizationWindows:new Set(), activationHooks:new Map(), opening:new Map(),
     settings,
+    agent: scope.NoctuaAgent.create({
+      Subprocess: ChromeUtils.importESModule("resource://gre/modules/Subprocess.sys.mjs").Subprocess,
+      IOUtils, PathUtils, Zotero,
+      tempBase: Services.dirsvc.get("TmpD", Ci.nsIFile).path,
+      home: Services.dirsvc.get("Home", Ci.nsIFile).path,
+      env: {PATH: Services.env.get("PATH") || ""},
+      makeId: () => "b" + uuid()
+    }),
     appearance: settings.appearance,
     selectedLibraryID(owner) {
       const pane=owner.ZoteroPane_Local || owner.ZoteroPane;
@@ -43,7 +52,7 @@ async function startup({id, version, rootURI}) {
       if(document.getElementById("noctua-notes-tab-icon"))return;
       const style=document.createElementNS("http://www.w3.org/1999/xhtml","style");
       style.id="noctua-notes-tab-icon";
-      style.textContent=`.icon-item-type[data-item-type="${this.tabIconName}"]{background:url("chrome://noctuanotes/content/icons/noctua-notes.svg") no-repeat center/contain}`;
+      style.textContent=`.icon.icon-item-type[data-item-type="${this.tabIconName}"], .icon-item-type[data-item-type="${this.tabIconName}"]{background:url("chrome://noctuanotes/content/icons/noctua-notes.svg") no-repeat center/contain !important}`;
       document.documentElement.append(style);
     },
     async referenceIndex(libraryID) {
@@ -157,7 +166,7 @@ async function startup({id, version, rootURI}) {
       })();
       return entry.closingPromise;
     },
-    async open({create=false, item=null, owner=Zotero.getMainWindow(), imported=null} = {}) {
+    async open({create=false, standalone=false, item=null, owner=Zotero.getMainWindow(), imported=null} = {}) {
       let pendingKey, pending;
       try {
         const activeTab = owner.Zotero_Tabs._getTab(owner.Zotero_Tabs.selectedID).tab;
@@ -186,6 +195,8 @@ async function startup({id, version, rootURI}) {
         storage.assertLibrary(libraryID);
         let parent = item;
         if (parent && !parent.isRegularItem()) parent = parent.parentID ? Zotero.Items.get(parent.parentID) : null;
+        // Standalone notes never attach to the selected paper, only to the collection.
+        if (standalone && !source) parent = null;
         const session = {id:source?.key || uuid(), item:source, libraryID,
           parentID:source?.parentID || parent?.id || null,
           collectionID:owner.ZoteroPane.getSelectedCollections?.()[0]?.id || null};
@@ -199,6 +210,7 @@ async function startup({id, version, rootURI}) {
             const entry=this.tabs.get(tab.id);
             if (!entry) return;
             this.flushEntry(entry).catch(error=>Zotero.logError(error));
+            this.agent.cleanup(session.id).catch(error=>Zotero.logError(error));
             this.tabs.delete(tab.id);
           }});
         const frame = owner.document.createElementNS("http://www.w3.org/1999/xhtml", "iframe");
@@ -212,26 +224,27 @@ async function startup({id, version, rootURI}) {
         const references=await this.referenceIndex(libraryID);
         const args = {session, doc, draft, storage, model:scope.NoctuaNotesModel, references, imported:!!imported,
           appearance:this.appearance,
-          importSource:()=>this.importSource({owner,item:parent}),
-          async pickCitation() {
-            const io={singleSelection:true, onlyRegularItems:true,filterLibraryIDs:[libraryID],
-              deferred:Zotero.Promise.defer(), itemTreeID:"noctua-notes-citation-picker"};
-            owner.openDialog("chrome://zotero/content/selectItemsDialog.xhtml","",
-              "chrome,dialog=no,centerscreen,resizable=yes",io);
-            await io.deferred.promise;
-            const selected=io.dataOut?.length ? await Zotero.Items.getAsync(io.dataOut[0]) : null;
-            if(!selected) return null;
-            if(selected.libraryID!==libraryID || !selected.isRegularItem()) throw new Error("Choose a paper in this note's library.");
-            // Refresh after a picker: papers may have been added since opening.
-            Object.assign(references,await NoctuaNotes.referenceIndex(libraryID));
-            return selected.key;
+          agent:{
+            providers:() => this.agent.providers(),
+            reset:() => this.agent.forget(session.id),
+            run:options => this.agent.run({...options, sessionKey:session.id, context:{
+              paperTitle:parent?.getField("title") || "",
+              authors:(parent?.getCreators?.() || []).map(creator => creator.name || [creator.firstName, creator.lastName].filter(Boolean).join(" ")).filter(Boolean).slice(0, 12)
+            }})
           },
+          importSource:()=>this.importSource({owner,item:parent}),
           async openCitation(key) {
             const cited=Zotero.Items.getByLibraryAndKey(libraryID,key);
             if(cited && !cited.deleted) await owner.ZoteroPane.selectItem(cited.id);
           },
           parentTitle:parent?.getField("title") || "My Library",
           exportSource:(document, editorWindow) => this.writeExport(document, editorWindow),
+          // Remote pages must live in an unprivileged content <browser>; a plain <iframe> inside
+          // this chrome:// page stays blank. Only validated YouTube URLs are ever loaded.
+          loadRemote:(player,url) => {
+            if(!/^https:\/\/www\.youtube\.com\/watch\?app=desktop&v=[\w-]{11}(&t=\d+s)?$/.test(url))throw new Error("Refusing to load an unexpected player URL");
+            player.fixupAndLoadURIString(url,{triggeringPrincipal:Services.scriptSecurityManager.getSystemPrincipal()});
+          },
           openURL:url => { if (/^(https?:|mailto:)/i.test(url)) Zotero.launchURL(url); },
           onTitle:title => {
             entry.title="Noctua Notes — "+title;
@@ -286,15 +299,38 @@ async function startup({id, version, rootURI}) {
   NoctuaNotes.unregisterPane=scope.NoctuaNotesPane.register({Zotero,pluginID:id,storage,
     open:args=>NoctuaNotes.open(args),create:args=>NoctuaNotes.open({...args,create:true})});
   Zotero.NoctuaNotes = NoctuaNotes;
+  // Zotero picks an item-tree icon from getItemTypeIconName(); give Noctua sources their own.
+  const itemProto = Zotero.Item?.prototype;
+  if (itemProto) {
+    const original = itemProto.getItemTypeIconName;
+    const patched = function(...args) {
+      try {if (storage.isSource(this)) return NoctuaNotes.tabIconName;} catch (_) {}
+      return original.apply(this, args);
+    };
+    // Rows already drawn keep their old icon until the tree repaints.
+    const repaint = () => {for (const window of Zotero.getMainWindows()) try {window.ZoteroPane?.itemsView?.tree?.invalidate();} catch (_) {}};
+    itemProto.getItemTypeIconName = patched;
+    repaint();
+    NoctuaNotes.restoreItemIcon = () => {
+      if (itemProto.getItemTypeIconName === patched) itemProto.getItemTypeIconName = original;
+      repaint();
+    };
+  }
+  Promise.resolve().then(() => storage.stripTitlePrefix?.()).catch(error => Zotero.logError(error));
   for (const window of Zotero.getMainWindows()) NoctuaNotes.loadLocalization(window);
-  for (const [target, menuID, create] of [
-    ["main/menubar/tools", "noctua-notes-tools", false],
-    ["main/library/item", "noctua-notes-item", false],
-    ["main/library/addNote", "noctua-notes-new", true]
+  for (const [target, menuID, l10nID, create, standalone] of [
+    ["main/library/item", "noctua-notes-item", "noctua-notes-open", false, false],
+    ["main/library/addNote", "noctua-notes-new", "noctua-notes-new-item", true, false],
+    ["main/library/addNote", "noctua-notes-new-standalone", "noctua-notes-new-standalone", true, true]
   ]) {
     Zotero.MenuManager.registerMenu({menuID, pluginID:id, target, menus:[{
-      menuType:"menuitem", l10nID:create ? "noctua-notes-new" : "noctua-notes-open",
-      onCommand:(_event, context) => NoctuaNotes.open({create, item:context.items?.[0]}).catch(Zotero.logError)
+      menuType:"menuitem", l10nID,
+      onShowing:create && !standalone ? (event, context) => {
+        const owner = context.menuElem?.ownerGlobal || event?.target?.ownerGlobal || Zotero.getMainWindow();
+        // An item note needs a selected paper (or one of its attachments).
+        context.setEnabled(owner.ZoteroPane.getSelectedItems().some(item => !item.isNote()));
+      } : undefined,
+      onCommand:(_event, context) => NoctuaNotes.open({create, standalone, item:context.items?.[0]}).catch(Zotero.logError)
     }]});
   }
   for (const [target, suffix] of [["main/menubar/tools", ""], ["main/library/item", "-item"]]) {
@@ -347,6 +383,7 @@ async function shutdown() {
     NoctuaNotes.settings?.destroy();
     NoctuaNotes.unregisterPane?.();
     NoctuaNotes.uninstallNativeNotes?.();
+    try {await NoctuaNotes.agent?.cleanup();} catch(error) {Zotero.logError(error);}
     for(const uninstall of NoctuaNotes.activationHooks.values())uninstall();
     NoctuaNotes.activationHooks.clear();
     for (const entry of [...NoctuaNotes.tabs.values()]) {
@@ -363,6 +400,7 @@ async function shutdown() {
         window.document.getElementById("noctua-notes-tab-icon")?.remove();
       }
     }
+    NoctuaNotes.restoreItemIcon?.();
     delete Zotero.NoctuaNotes;
     NoctuaNotes = undefined;
   }

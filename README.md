@@ -17,18 +17,21 @@ To publish a release: bump `version` in `manifest.json` and `package.json`,
 commit and push, then run `scripts/release.sh`. It builds the XPI, writes
 `dist/updates.json` (with a SHA-256 hash), and creates the GitHub Release.
 
-Select a paper in **My Library** and choose **Tools → Open Noctua Notes…**, or use
-the paper's context menu. This opens that paper's first Noctua note or creates
-a new editor if none exists. **New note (+) → New Noctua Note…** always creates
-a new note. With no paper selected, notes are standalone in the selected
-collection. Select a Noctua source attachment to reopen that specific editor. Group libraries are intentionally rejected in this version.
-From a PDF tab, **Tools → Open Noctua Notes…** uses that PDF's parent paper. The
+Typing `\cite{` (or `\citep{`, `\citet{`, …) in a text block opens a list of your library under the caret; keep typing to filter by title, author, year, item key or citation key, then press Enter or Tab to insert the key.
+
+Select a paper in **My Library** and use the paper's context menu
+(**Open Noctua Notes**). This opens that paper's first Noctua note or creates
+a new editor if none exists. **New note (+) → New Item Noctua Note** always creates
+a new note under the selected paper (disabled with no paper selected).
+**New Standalone Noctua Note** creates a note that belongs to no paper, in the
+selected collection. Select a Noctua source attachment to reopen that specific editor. Group libraries are intentionally rejected in this version.
+From a PDF tab, the Noctua sidebar section uses that PDF's parent paper. The
 note opens in its own Zotero tab beside the PDF. Saved sources can be reopened
 after restarting Zotero; automatic tab-session restoration is not implemented.
 
 Version 0.3 includes the fix for blank plugin menu labels by loading the Fluent resource
 in existing and newly opened Zotero main windows. Tools now shows
-**Open Noctua Notes…**, **Import Noctua Source…**, and **Export Noctua Source…**.
+**Open Noctua Notes**, **Import Noctua Source**, and **Export Noctua Source**.
 Source transfer actions are also in the item right-click menu. Export is available
 for the active editor or an explicitly selected source attachment.
 
@@ -37,7 +40,7 @@ for the active editor or an explicitly selected source attachment.
 Each saved source attachment represents one Noctua Note instance with a stable
 document ID and Zotero item key. Double-click **Noctua Note — title** in the
 library to open it in a Noctua editor tab. Repeated opens select the existing
-tab; simultaneous opens share one initialization. **New Noctua Note…**
+tab; simultaneous opens share one initialization. **New Item Noctua Note**
 creates a separate instance. Zotero still manages paper and collection membership.
 
 Each instance uses a single source attachment. No native reading-preview note
@@ -109,7 +112,7 @@ and Noctua project-file management are not included yet. See
 
 ## Import existing Noctua notes
 
-Choose **Tools → Import Noctua Source…** or the item right-click command, then
+Choose **Tools → Import Noctua Source** or the item right-click command, then
 select an original Noctua version-1 JSON file from `notes/<folder>/<id>.json`.
 Keep its `images/` and `media/` folders beside the JSON. Text, preamble, vector
 strokes, drawing/text layout, and referenced PNG/JPEG/GIF/WebP assets are imported.
@@ -126,7 +129,7 @@ reported after import. Original citation and note-link keys stay in the source;
 they require matching Zotero citation keys, and original note links do not resolve.
 Collection membership, tags, author metadata, and project files are not migrated.
 
-**Tools → Export Noctua Source…**, or the source attachment’s right-click
+**Tools → Export Noctua Source**, or the source attachment’s right-click
 command, produces a portable `.noctua.json` file with inline images. Export from
 an open editor includes pending unsaved edits and completes active ink strokes.
 Import/export source buttons do not appear on the note page.
@@ -171,7 +174,7 @@ successful saves have no active preview key.
 Revision checks reject overwriting a source that changed since it was loaded.
 The editor preserves a local draft under
 `[Zotero data directory]/noctua-notes-drafts/`. Reopening a saved source offers
-draft recovery. The **Export Noctua Source…** menu command preserves a copy before merging a
+draft recovery. The **Export Noctua Source** menu command preserves a copy before merging a
 conflict; **Reload saved version** loads the current committed source. A never-saved
 new note has a UUID-named draft file that can be recovered manually from this
 folder. Drafts are local, not a substitute for syncing or backups. Conflicting

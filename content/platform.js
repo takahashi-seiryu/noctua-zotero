@@ -31,7 +31,17 @@ var NoctuaAppearance = {
       toggle.querySelector("[data-theme-icon='dark']").hidden = !dark;
       if (changed) refresh();
     }
-    function sync() { mode = read(); apply(); }
+    function readPreview() {
+      try { return appearance?.getPreviewPosition?.() === "below" ? "below" : "right"; } catch (_) { return "right"; }
+    }
+    function sync() { mode = read(); apply(); document.documentElement.dataset.preview = readPreview();
+      try {
+        const width = appearance?.getContentWidth?.() ?? 60, style = document.documentElement.style;
+        style.setProperty("--note-width", width + "%");
+        // The block being edited beside its preview may grow to this share of the window, whatever the note width.
+        style.setProperty("--note-grow", String(Math.max(1, 90 / width)));
+      } catch (_) {}
+      try { if (typeof Ink !== "undefined" && appearance?.getInkColors) Ink.setPalette(appearance.getInkColors()); } catch (error) { onError(error); } }
     function osChanged() { if (mode === "system") apply(); }
     function toggleTheme() {
       const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";

@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Noctua Notes",
-  "version": "0.6.1",
+  "version": "0.7.47",
   "description": "Noctua's LaTeX, handwriting and image notes inside Zotero, with editable sources synced as attachments.",
   "author": "Noctua contributors",
   "applications": {

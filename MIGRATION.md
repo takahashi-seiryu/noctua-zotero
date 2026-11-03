@@ -119,3 +119,25 @@ Creation is a text-style "+ New note" button; an empty paper shows "No notes yet
 - SVG images (pasted, dropped, `\includegraphics`, or imported from `images/`/`media/`) are stored as base64 and shown only through `<img>`, which cannot run scripts or load external files; stored data must decode to an `<svg>` document.
 - A YouTube link alone on a line shows an embedded player. Zotero's privileged editor page cannot host remote pages in an `<iframe>`, so the player is an unprivileged remote content `<browser>` (youtube-nocookie.com only, validated 11-character IDs). The editor CSP is unchanged (`frame-src 'none'`). While a block is being edited its player is replaced by a "Watch on YouTube" link and returns when editing ends.
 - Video files (`\includevideo`) remain unsupported.
+
+## 0.7.0 Assistant panel (Claude / Codex CLI)
+
+A right-hand chat panel (sparkles button or Shift+Cmd/Ctrl+K) runs the user's own,
+already signed-in `claude` or `codex` command-line tool. Noctua never handles
+credentials. Each request exports the note to a throwaway directory
+(`note.tex` with `%%% block <id> text|drawing|image` markers, `title.txt`,
+`preamble.tex`, read-only `context.txt` with the paper title and authors), lets the
+CLI edit those files, and parses them back into a proposal. Drawings and images are
+placeholders the agent cannot change. The proposal is shown block by block and applied
+only on Apply, as a single Undo step (a confirmation appears if the note changed
+meanwhile). Conversations resume per tab and provider; Stop kills the process.
+
+- Claude: `claude -p --output-format stream-json` with tools limited to
+  Read/Edit/Write/Glob/Grep, user settings and MCP servers ignored.
+- Codex: `codex exec --json` in the `workspace-write` sandbox. Codex can still *read*
+  files outside the temp directory; the prompt forbids it but the sandbox does not.
+- CLI paths are found automatically (`~/.local/bin`, Homebrew, login shell) or set in
+  Settings. The note text and paper title/authors are sent to the chosen provider.
+- Anthropic's Agent SDK terms do not let third-party products offer claude.ai login;
+  this feature only launches the user's local CLI. Add an API-key adapter before
+  distributing publicly.

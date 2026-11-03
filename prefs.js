@@ -1,1 +1,10 @@
 pref("extensions.noctua-notes.theme", "light");
+pref("extensions.noctua-notes.previewPosition", "right");
+pref("extensions.noctua-notes.contentWidth", 60);
+pref("extensions.noctua-notes.ink.color0", "");
+pref("extensions.noctua-notes.ink.color1", "#3e63dd");
+pref("extensions.noctua-notes.ink.color2", "#e5484d");
+pref("extensions.noctua-notes.ink.color3", "#30a46c");
+pref("extensions.noctua-notes.ink.color4", "#f76b15");
+pref("extensions.noctua-notes.agent.claudePath", "");
+pref("extensions.noctua-notes.agent.codexPath", "");

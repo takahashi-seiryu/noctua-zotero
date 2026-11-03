@@ -44,3 +44,18 @@ test('hostile metadata, aliases and citation notes stay escaped',()=>{
   }
   assert.match(index.renderCitation(['x']),/data-noctua-cite="A&quot;&lt;"/);
 });
+
+test("search ranks citation keys, authors, years and titles, requires every word and prefers newer ties",()=>{
+  const index=refs.index([
+    {key:"AAA111",title:"Learning World Models from Pixels",creators:[{firstName:"Yann",lastName:"LeCun"}],year:2025,extra:"Citation Key: lecun2025world"},
+    {key:"BBB222",title:"Order-Embeddings of Images and Language",creators:[{firstName:"Ivan",lastName:"Vendrov"}],year:2016},
+    {key:"CCC333",title:"World Models",creators:[{firstName:"David",lastName:"Ha"}],year:2018}]);
+  assert.deepEqual(index.search("").map(i=>i.key),["AAA111","CCC333","BBB222"]);
+  assert.deepEqual(index.search("lecun").map(i=>i.key),["AAA111"]);
+  assert.deepEqual(index.search("lecun2025").map(i=>i.key),["AAA111"]);
+  assert.deepEqual(index.search("world models").map(i=>i.key),["AAA111","CCC333"]);
+  assert.deepEqual(index.search("vend 2016").map(i=>i.key),["BBB222"]);
+  assert.deepEqual(index.search("ord emb lang").map(i=>i.key),["BBB222"]);
+  assert.deepEqual(index.search("pixels 2016"),[]);
+  assert.equal(index.search("",2).length,2);
+});

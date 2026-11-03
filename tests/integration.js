@@ -17,8 +17,8 @@
     toolsPopup.dispatchEvent(new mainWindow.Event("popupshowing",{bubbles:true}));
     const menuItems=[...toolsPopup.querySelectorAll('[data-l10n-id^="noctua-notes-"]')];
     await mainWindow.document.l10n.translateElements(menuItems);
-    assert(menuItems.some(item=>item.getAttribute("label")==="Open Noctua Notes…"),"Open Noctua Notes menu label is blank or missing");
-    assert(menuItems.some(item=>item.getAttribute("label")==="Import Noctua Source…"),"Import Noctua Source menu label is blank or missing");
+    assert(!menuItems.some(item=>/^Open Noctua Notes/.test(item.getAttribute("label")||"")),"Tools menu must not offer Open Noctua Notes");
+    assert(menuItems.some(item=>item.getAttribute("label")==="Import Noctua Source"),"Import Noctua Source menu label is blank or missing");
     toolsPopup.dispatchEvent(new mainWindow.Event("popuphidden",{bubbles:true}));
     result.passed.push("Tools menu loads plugin localization and displays explicit English Open/Import labels");
     const storage=NoctuaNotes.storage, model=NoctuaNotes.model;
@@ -42,6 +42,15 @@
     assert(session.item.attachmentSyncState===Zotero.Sync.Storage.Local.SYNC_STATE_TO_UPLOAD,"Source must be queued for native file sync");
     assert(first.doc.previewNoteKey===null&&paper.getNotes().length===0,"Saving must create only a source, without a reading preview");
     result.passed.push("Real Zotero source attachment created without a native preview; queued for file sync");
+    await checkpoint();
+    session.item.setField("title","Noctua Note — legacy");await session.item.saveTx();
+    assert(session.item.getItemTypeIconName()==="noctuanote","Noctua sources must use their own icon name");
+    assert(await storage.stripTitlePrefix()===1&&session.item.getField("title")==="legacy","Legacy title prefix must be stripped");
+    await mainWindow.ZoteroPane.itemsView.expandAllRows();
+    await new Promise(resolve=>setTimeout(resolve,1500));
+    const icon=mainWindow.document.querySelector('#item-tree-main-default .icon-item-type[data-item-type="noctuanote"]');
+    assert(icon&&mainWindow.getComputedStyle(icon).backgroundImage.includes("noctua-notes.svg"),"Item-tree row must draw the Noctua icon");
+    result.passed.push("Noctua sources show their own icon in the item tree; legacy title prefix is stripped");
     await checkpoint();
     const reopened=await storage.load(session.item);
     assert(reopened.doc.blocks[1].strokes[0].p.length===5,"Vector strokes lost");
@@ -138,7 +147,7 @@
     toolsPopup.dispatchEvent(new mainWindow.Event("popupshowing",{bubbles:true}));
     const exportMenu=toolsPopup.querySelector('[data-l10n-id="noctua-notes-export"]');
     await mainWindow.document.l10n.translateElements([exportMenu]);
-    assert(exportMenu?.getAttribute("label")==="Export Noctua Source…"&&!exportMenu.hidden&&!exportMenu.disabled,"Tools source export is missing for the active editor");
+    assert(exportMenu?.getAttribute("label")==="Export Noctua Source"&&!exportMenu.hidden&&!exportMenu.disabled,"Tools source export is missing for the active editor");
     toolsPopup.dispatchEvent(new mainWindow.Event("popuphidden",{bubbles:true}));
     const exportTitle=win.document.getElementById("title");exportTitle.value="Unsaved source export";
     exportTitle.dispatchEvent(new win.Event("input",{bubbles:true}));
@@ -203,13 +212,148 @@
       added.value="https://youtu.be/dQw4w9WgXcQ\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n\\begin{tabular}{|l|r|}\\hline x & y \\\\ \\hline\\end{tabular}";
       added.dispatchEvent(new win.Event("input",{bubbles:true}));
       const view=added.closest(".nb").querySelector(".nb-view");
-      const frame=view.querySelector(".tex-youtube .yt-player");
-      assert(frame&&frame.getAttribute("src").startsWith("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"),"YouTube player iframe was not kept by the editor");
+      const poster=view.querySelector(".tex-youtube .yt-poster img");
+      assert(poster&&/^https:\/\/i\.ytimg\.com\/vi\/dQw4w9WgXcQ\/(maxres|sd|hq)default\.jpg$/.test(poster.getAttribute("src")),"YouTube thumbnail card was not rendered");
       assert(view.querySelectorAll("table.tex-table").length===2&&view.querySelectorAll("td").length>=4,"Pipe and LaTeX tables did not render");
-      await new Promise(resolve=>setTimeout(resolve,4000));
-      let loaded="unknown";try{loaded=String(frame.currentURI?.spec||frame.contentDocument?.URL||"none")+" tag="+frame.localName+" remote="+frame.getAttribute("remote");}catch(error){loaded="err: "+error.name;}
-      result.youtubeProbe={loaded,height:frame.getBoundingClientRect().height,width:frame.getBoundingClientRect().width};
+      await new Promise(resolve=>setTimeout(resolve,3000));
+      result.youtubeProbe={thumbnailLoaded:poster.complete&&poster.naturalWidth>0,naturalWidth:poster.naturalWidth,src:poster.getAttribute('src')};
+      assert(poster.naturalWidth>=1280,'Expected the HD thumbnail, got '+poster.naturalWidth+'px from '+poster.getAttribute('src'));
+      {view.querySelector(".tex-youtube .yt-poster").click();
+        const frame=view.querySelector(".tex-youtube .yt-frame"),player=frame?.querySelector("browser");
+        assert(player,"Clicking the thumbnail did not open an inline player");
+        await new Promise(resolve=>setTimeout(resolve,9000));
+        assert(/^https:\/\/www\.youtube\.com\/watch\?app=desktop&v=dQw4w9WgXcQ$/.test(String(player.currentURI?.spec)),"Inline player did not load the watch page: "+player.currentURI?.spec);
+        const w=Math.round(frame.getBoundingClientRect().width),h=Math.round(frame.getBoundingClientRect().height);
+        const bmp=await player.drawSnapshot(0,56,w,h,1,"white");
+        const canvas=win.document.createElement("canvas");canvas.width=w;canvas.height=h;canvas.getContext("2d").drawImage(bmp,0,0);
+        const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
+        await IOUtils.write(PathUtils.join(PathUtils.parent(Zotero.Prefs.get("extensions.noctua-notes.testResult",true)),"youtube-player.png"),new Uint8Array(await blob.arrayBuffer()));
+        result.youtubePlayer={w,h,url:player.currentURI?.spec};}
+      {added.value="Alpha beta $x$ **plain** gamma delta epsilon.";added.dispatchEvent(new win.Event("input",{bubbles:true}));
+        const v=added.closest(".nb").querySelector(".nb-view");
+        const walker=win.document.createTreeWalker(v,4);let range=null;
+        for(let n=walker.nextNode();n;n=walker.nextNode()){const i=n.nodeValue.indexOf("delta");if(i>=0){range=win.document.createRange();range.setStart(n,i+2);range.setEnd(n,i+3);break;}}
+        assert(range,"Could not find the word to click in the preview");
+        const box=range.getBoundingClientRect();
+        added.closest(".nb").classList.remove("editing");
+        v.dispatchEvent(new win.MouseEvent("click",{bubbles:true,cancelable:true,clientX:box.left+1,clientY:box.top+box.height/2}));
+        const from=added.value.indexOf("delta");
+        assert(added.selectionStart>=from&&added.selectionStart<=from+5,"Clicking a rendered word should put the source caret there: caret "+added.selectionStart+", word at "+from);
+        result.passed.push("Clicking rendered text places the source caret at the matching position");}
+      {added.value="# Heading\n\nSome **bold**, *italic* and `code` with $x^2$.\n\n- one\n- two\n\n\\begin{align} a&=b \\\\ c&=d \\end{align}";
+        added.dispatchEvent(new win.Event("input",{bubbles:true}));added.closest(".nb").classList.remove("editing");
+        await new Promise(resolve=>setTimeout(resolve,800));
+        const v=added.closest(".nb").querySelector(".nb-view");
+        assert(v.querySelector("h2")&&v.querySelector("b")&&v.querySelector("em")&&v.querySelector("code")&&v.querySelectorAll("li").length===2,"Markdown basics did not render");
+        assert(v.querySelectorAll(".katex").length>=2&&!v.querySelector(".katex-error,.tex-unknown"),"Math did not render with KaTeX");}
+      {const filler=Array.from({length:40},(_,i)=>"Filler paragraph number "+i+" with some text to take up room.").join("\n\n");
+        added.value="Jump to \\ref{eq:far} and \\ref{sec:far}.\n\n"+filler+"\n\n\\section{Far section}\\label{sec:far}\n\\begin{equation}\\label{eq:far} x=1 \\end{equation}\n\nEnd.";
+        added.dispatchEvent(new win.Event("input",{bubbles:true}));added.closest(".nb").classList.remove("editing");
+        await new Promise(resolve=>setTimeout(resolve,1200));
+        const v=added.closest(".nb").querySelector(".nb-view"),link=v.querySelector('a.tex-ref[data-tex-ref="eq:far"]'),target=v.querySelector('[data-tex-label="eq:far"]');
+        assert(link&&target,"Reference and its target must both render");
+        const before=target.getBoundingClientRect().top;
+        link.dispatchEvent(new win.MouseEvent("click",{bubbles:true,cancelable:true}));
+        await new Promise(resolve=>setTimeout(resolve,900));
+        const after=target.getBoundingClientRect().top;
+        assert(before>win.innerHeight&&after>=0&&after<=win.innerHeight,"Clicking a reference should scroll its target into view: "+before+" -> "+after);
+        assert(!added.closest(".nb").classList.contains("editing"),"Clicking a reference must not start editing");
+        win.document.scrollingElement.scrollTop=0;await new Promise(resolve=>setTimeout(resolve,300));
+        result.passed.push("Clicking a reference scrolls to its label");}
       added.value=keep;added.dispatchEvent(new win.Event("input",{bubbles:true}));}
+    {const fake=PathUtils.join(PathUtils.tempDir,"noctua-fake-claude-"+Date.now()+".py");
+      await IOUtils.writeUTF8(fake,`#!/usr/bin/python3
+import sys,json,os
+sys.stdin.read()
+t=open("note.tex").read().split("\\n")
+for i,l in enumerate(t):
+    if l.startswith("%%% block") and l.endswith(" text"):
+        t[i+1]+=" [AI]"+(" [ATT]" if os.path.exists("attachments/ref.txt") and open("attachments/ref.txt").read()=="hello" else "");break
+open("note.tex","w").write("\\n".join(t))
+print(json.dumps({"type":"system","session_id":"s1"}))
+print(json.dumps({"type":"assistant","message":{"content":[{"type":"text","text":"Appended a marker."}]}}))
+print(json.dumps({"type":"result","subtype":"success","result":"Appended a marker.","session_id":"s1"}))
+`);
+      await IOUtils.setPermissions(fake,0o755);
+      Zotero.Prefs.set("extensions.noctua-notes.agent.claudePath",fake,true);
+      const d=win.document,wait=async(test,ms=15000)=>{for(let n=0;n<ms/100&&!test();n++)await new Promise(resolve=>setTimeout(resolve,100));return test();};
+      {const ta=d.querySelector(".nb-text textarea"),original=ta.value;
+        ta.focus();ta.value="\\cite{Love";ta.setSelectionRange(ta.value.length,ta.value.length);ta.dispatchEvent(new win.Event("input",{bubbles:true}));
+        assert(await wait(()=>d.querySelector(".cite-suggest .cite-row")),"\\cite{ did not open the citation list");
+        assert(d.querySelector(".cite-suggest").textContent.includes("NOCTUA PROTOTYPE"),"Citation list did not match the author prefix");
+        {const box=d.querySelector(".cite-suggest");
+          box.dispatchEvent(new win.Event("scroll"));
+          ta.dispatchEvent(new win.KeyboardEvent("keydown",{key:"ArrowDown",bubbles:true,cancelable:true}));
+          ta.dispatchEvent(new win.KeyboardEvent("keydown",{key:"ArrowUp",bubbles:true,cancelable:true}));
+          await new Promise(r=>setTimeout(r,200));
+          assert(d.querySelector(".cite-suggest"),"Scrolling or arrowing through the citation list must not close it");}
+        ta.dispatchEvent(new win.KeyboardEvent("keydown",{key:"Enter",bubbles:true,cancelable:true}));
+        assert(/^\\cite\{[A-Z0-9]{8}\}$/.test(ta.value),"Enter did not insert the item key: "+ta.value);
+        assert(!d.querySelector(".cite-suggest"),"Citation list stayed open after choosing");
+        ta.value=original;ta.dispatchEvent(new win.Event("input",{bubbles:true}));}
+      {const pad=d.querySelector(".nb-ink .ink");
+        if(pad){const col=pad.closest(".nb").clientWidth;
+          assert(await wait(()=>Math.abs(pad.getBoundingClientRect().width-col)<=2),"Drawing is not as wide as the note column: "+pad.getBoundingClientRect().width+" vs "+col);}}
+      {const when=d.getElementById("save-time");
+        assert(when&&/^(just now|\d+ min ago|\d+ h ago|Yesterday|\d+ days ago)$/.test(when.textContent),"Header should show when the note was last saved, got: "+when?.textContent);}
+      {const ta=d.querySelector(".nb-text textarea"),original=ta.value;
+        // One keystroke as the engine delivers it: keydown first, then the text insertion as beforeinput.
+        const type=ch=>{ta.value="";ta.setSelectionRange(0,0);ta.focus();
+          ta.dispatchEvent(new win.KeyboardEvent("keydown",{key:ch,bubbles:true,cancelable:true}));
+          ta.dispatchEvent(new win.InputEvent("beforeinput",{inputType:"insertText",data:ch,bubbles:true,cancelable:true}));
+          return [ta.value,ta.selectionStart];};
+        const [brace,bracePos]=type("{"),[paren]=type("("),[dollar]=type("$");
+        assert(brace==="{}"&&bracePos===1,"One { keystroke must make exactly one pair, got: "+brace);
+        assert(paren==="()"&&dollar==="$$","Brackets and dollars must pair once: "+paren+" "+dollar);
+        ta.value=original;ta.dispatchEvent(new win.Event("input",{bubbles:true}));}
+      {Zotero.Prefs.set("extensions.noctua-notes.agent.codexPath",fake,true);
+        d.getElementById("chat-toggle").click();
+        assert(await wait(()=>d.querySelectorAll(".chat-provider-seg button").length===2),"Both providers should show a switch");
+        const seg=d.querySelector(".chat-provider-seg"),btn=id=>seg.querySelector(`button[data-provider="${id}"]`),sel=()=>d.getElementById("chat-provider").value;
+        assert(sel()==="claude","Claude should be selected first, got "+sel());
+        btn("claude").click();assert(sel()==="codex","Pressing the selected provider should flip to the other one");
+        btn("codex").click();assert(sel()==="claude","Pressing the selected provider again should flip back");
+        btn("codex").click();assert(sel()==="codex","Pressing the other provider should select it");
+        seg.dispatchEvent(new win.MouseEvent("click",{bubbles:true}));assert(sel()==="claude","Pressing the switch itself should flip it");
+        d.getElementById("chat-toggle").click();
+        Zotero.Prefs.clear("extensions.noctua-notes.agent.codexPath",true);}
+      {const ta=d.querySelector(".nb-text textarea"),original=ta.value;
+        ta.focus();ta.value="item";ta.setSelectionRange(0,0);
+        const tab=new win.KeyboardEvent("keydown",{key:"Tab",bubbles:true,cancelable:true});
+        ta.dispatchEvent(tab);
+        assert(tab.defaultPrevented&&ta.value==="  item","Tab should indent inside the block instead of moving focus: "+JSON.stringify(ta.value));
+        ta.value=original;ta.dispatchEvent(new win.Event("input",{bubbles:true}));}
+      Zotero.Prefs.set("extensions.noctua-notes.contentWidth",60,true);
+      assert(await wait(()=>d.documentElement.style.getPropertyValue("--note-width")==="60%"),"Note width setting did not reach the open editor");
+      Zotero.Prefs.clear("extensions.noctua-notes.contentWidth",true);
+      assert(await wait(()=>d.documentElement.style.getPropertyValue("--note-width")==="60%"),"Resetting the note width did not restore the default");
+      Zotero.Prefs.set("extensions.noctua-notes.ink.color2","#112233",true);
+      assert(await wait(()=>d.querySelector('.ink-tools [data-color="#112233"]')),"Pen colour setting did not reach open drawing toolbars");
+      assert(d.querySelectorAll(".ink-tools")[0].querySelectorAll("[data-color]").length===5&&d.querySelector('.ink-tools [data-color]').dataset.color==="#e8e6e1","Palette should be the adaptive Ink pen plus four accents");
+      Zotero.Prefs.clear("extensions.noctua-notes.ink.color2",true);
+      assert(await wait(()=>d.querySelector('.ink-tools [data-color="#e5484d"]')),"Resetting the pen colour did not restore the default");
+      d.getElementById("chat-toggle").click();
+      assert(!d.getElementById("chat").hidden&&d.body.classList.contains("chat-open"),"Assistant panel did not open");
+      assert(await wait(()=>![...d.querySelectorAll("#chat-provider option")].find(o=>o.value==="claude")?.textContent.includes("not found")),"Provider list did not pick up the configured CLI");
+      d.getElementById("chat-provider").value="claude";
+      const before=win.NoctuaNotesEditor.getDocument(),at=before.blocks.findIndex(b=>b.type==="text");
+      {const dt=new win.DataTransfer();dt.items.add(new win.File(["hello"],"ref.txt",{type:"text/plain"}));
+        d.getElementById("chat-form").dispatchEvent(new win.DragEvent("drop",{bubbles:true,cancelable:true,dataTransfer:dt}));}
+      assert(await wait(()=>d.querySelector("#chat-attachments .chat-chip")),"Dropped file did not appear as an attachment chip");
+      d.getElementById("chat-input").value="Polish the first paragraph";
+      d.getElementById("chat-form").dispatchEvent(new win.Event("submit",{bubbles:true,cancelable:true}));
+      assert(await wait(()=>d.getElementById("chat-apply")),"Assistant proposal never appeared: "+d.getElementById("chat-log").textContent);
+      assert(d.getElementById("chat-proposal").textContent.includes("[ATT]")&&d.getElementById("chat-log").textContent.includes("ref.txt"),"The assistant did not receive the attached file");
+      assert(d.getElementById("chat-log").textContent.includes("Appended a marker.")&&d.getElementById("chat-proposal").textContent.includes("Edited block "+(at+1)),"Reply or proposal summary missing");
+      assert(win.NoctuaNotesEditor.getDocument().blocks[at].src===before.blocks[at].src,"Note changed before the proposal was approved");
+      d.getElementById("chat-apply").click();
+      const applied=win.NoctuaNotesEditor.getDocument().blocks[at].src;
+      assert(applied.split("\n")[0]===before.blocks[at].src.split("\n")[0]+" [AI] [ATT]"&&applied.split("\n").slice(1).join("\n")===before.blocks[at].src.split("\n").slice(1).join("\n"),"Applying the proposal did not update only the first line: "+JSON.stringify(applied));
+      d.getElementById("undo").click();
+      assert(win.NoctuaNotesEditor.getDocument().blocks[at].src===before.blocks[at].src,"One Undo did not revert the assistant's edit");
+      d.getElementById("chat-close").click();
+      Zotero.Prefs.clear("extensions.noctua-notes.agent.claudePath",true);await IOUtils.remove(fake,{ignoreAbsent:true});
+      result.passed.push("Assistant panel runs the configured CLI, proposes block edits and applies them as one undoable step");}
     const handleCount=win.document.querySelectorAll(".nb-handle").length, total=win.NoctuaNotesEditor.getDocument().blocks.length;
     assert(handleCount===total&&!win.document.querySelector(".nb-tools"),"Each block needs one drag handle and no inline tool buttons");
     win.document.querySelectorAll(".nb-handle")[1].click();assert(win.document.querySelector(".ctx-menu"),"Clicking the handle did not open the block menu");win.document.querySelectorAll(".nb-handle")[1].dispatchEvent(new win.Event("contextmenu",{bubbles:true,cancelable:true}));
@@ -362,4 +506,6 @@
   }
   result.finished=true;
   await checkpoint();
+  // The isolated test instance must not linger once its result is written.
+  if(Zotero.DataDirectory.dir.includes("noctua-zotero-test-"))setTimeout(()=>Services.startup.quit(Services.startup.eForceQuit),500);
 })().catch(error=>Zotero.logError(error));

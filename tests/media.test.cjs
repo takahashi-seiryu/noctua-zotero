@@ -44,3 +44,24 @@ test("SVG media is accepted only as a real base64 SVG image",()=>{
   assert.doesNotThrow(()=>model.validate(block(svg)));
   assert.throws(()=>model.validate(block("data:image/svg+xml;base64,bm90IGFuIGltYWdl")),/Images must be/);
 });
+
+test("markdown conveniences render at line starts without disturbing LaTeX or arithmetic",()=>{
+  const md=render("# Title\n\n## Part\n\nSome **bold**, *italic*, ~~gone~~ and `code <b>` text.\n\n- one\n- two with $x$\n\n1. first\n2. second\n\n> quoted line\n\n---\n\n```\nlet a = 1;\n```");
+  assert.match(md,/<h2 class="tex-h">Title<\/h2>/);assert.match(md,/<h3 class="tex-h">Part<\/h3>/);
+  assert.match(md,/<b>bold<\/b>, <em>italic<\/em>, <s>gone<\/s>/);assert.match(md,/<code>code &lt;b&gt;<\/code>/);
+  assert.match(md,/<ul class="tex-list"><li>.*one.*<\/li><li>.*two/s);assert.match(md,/<ol class="tex-list"><li>.*first/s);
+  assert.match(md,/class="tex-quote"[^>]*>.*quoted line/s);assert.match(md,/<hr class="tex-rule">/);
+  assert.match(md,/<pre class="tex-verbatim">let a = 1;<\/pre>/);
+  const plain=render("Compute 2 * 3 * 4 and a*b, then ``quoted'' text's end, and \\emph{kept}.");
+  assert.doesNotMatch(plain,/<em>(?!kept)/);assert.match(plain,/2 \* 3 \* 4/);assert.match(plain,/“quoted”/);assert.match(plain,/<em>kept<\/em>/);
+  assert.doesNotMatch(render("\\section{A}\nplain # not a heading"),/<h2[^>]*># /);
+});
+test("eqnarray, spacing commands, colours, rules and the title block render instead of printing raw commands",()=>{
+  const eq=render("\\begin{eqnarray} a&=&b \\\\ c&=&d \\end{eqnarray}");
+  assert.doesNotMatch(eq,/tex-unknown/);assert.match(eq,/class="tex-display"/);
+  const out=render("a\\vspace{1em}b \\hspace*{2cm}c \\textcolor{red}{R} \\colorbox{#ffee00}{H} {\\color{blue} B}\n\n\\hrule\n\n\\title{My \\emph{Note}}\\author{Ada}\\date{2026}\\maketitle");
+  assert.doesNotMatch(out,/tex-unknown|vspace|hspace/);assert.match(out,/ab c/);
+  assert.match(out,/<span style="color:red">R<\/span>/);assert.match(out,/<span style="background:#ffee00">H<\/span>/);assert.match(out,/<span style="color:blue">B<\/span>/);
+  assert.match(out,/<hr class="tex-rule">/);assert.match(out,/<div class="tex-title"><h1>My <em>Note<\/em><\/h1><p class="tex-author">Ada<\/p><p class="tex-date">2026<\/p><\/div>/);
+  assert.doesNotMatch(render("\\textcolor{red;background:url(x)}{bad}"),/style=/);
+});

@@ -18,6 +18,49 @@
         </menulist>
       </hbox>
       <description id="noctua-notes-theme-description" data-l10n-id="noctua-notes-theme-description"/>
+      <hbox align="center">
+        <label control="noctua-notes-width" data-l10n-id="noctua-notes-width-label"/>
+        <html:input id="noctua-notes-width" type="range" min="50" max="100" step="5" preference="extensions.noctua-notes.contentWidth" aria-describedby="noctua-notes-width-value"/>
+        <label id="noctua-notes-width-value" style="min-width: 3.5em"/>
+      </hbox>
+      <hbox align="center">
+        <label control="noctua-notes-preview" data-l10n-id="noctua-notes-preview-label"/>
+        <menulist id="noctua-notes-preview" native="true" preference="extensions.noctua-notes.previewPosition">
+          <menupopup>
+            <menuitem value="right" data-l10n-id="noctua-notes-preview-right"/>
+            <menuitem value="below" data-l10n-id="noctua-notes-preview-below"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+    </groupbox>
+    <groupbox aria-labelledby="noctua-notes-ink-title" id="noctua-notes-ink-group">
+      <html:style>
+        #noctua-notes-ink-group input[type="color"] { appearance: none; -moz-appearance: none; width: 30px; height: 30px; min-width: 30px; padding: 0; margin: 0 6px 0 0; border: 2px solid var(--fill-quinary, #0002); border-radius: 50%; background: none; cursor: pointer; overflow: hidden; }
+        #noctua-notes-ink-group input[type="color"]::-moz-color-swatch { border: 0; border-radius: 50%; }
+        #noctua-notes-ink-group input[type="color"]:hover { border-color: var(--accent-blue, #4072e5); }
+        #noctua-notes-ink-group input[type="color"]:focus-visible { outline: 2px solid var(--accent-blue, #4072e5); outline-offset: 2px; }
+      </html:style>
+      <label><html:h2 id="noctua-notes-ink-title" data-l10n-id="noctua-notes-ink-title"/></label>
+      <hbox align="center">
+        <html:input id="noctua-notes-ink-color0" type="color" preference="extensions.noctua-notes.ink.color0" aria-label="Pen colour 1 (Ink)"/>
+        <html:input id="noctua-notes-ink-color1" type="color" preference="extensions.noctua-notes.ink.color1" aria-label="Pen colour 2"/>
+        <html:input id="noctua-notes-ink-color2" type="color" preference="extensions.noctua-notes.ink.color2" aria-label="Pen colour 3"/>
+        <html:input id="noctua-notes-ink-color3" type="color" preference="extensions.noctua-notes.ink.color3" aria-label="Pen colour 4"/>
+        <html:input id="noctua-notes-ink-color4" type="color" preference="extensions.noctua-notes.ink.color4" aria-label="Pen colour 5"/>
+        <html:button id="noctua-notes-ink-reset" type="button" data-l10n-id="noctua-notes-ink-reset"/>
+      </hbox>
+    </groupbox>
+    <groupbox aria-labelledby="noctua-notes-agent-title">
+      <label><html:h2 id="noctua-notes-agent-title" data-l10n-id="noctua-notes-agent-title"/></label>
+      <description data-l10n-id="noctua-notes-agent-description"/>
+      <hbox align="center">
+        <label control="noctua-notes-claude-path" data-l10n-id="noctua-notes-claude-path-label"/>
+        <html:input id="noctua-notes-claude-path" type="text" flex="1" preference="extensions.noctua-notes.agent.claudePath" placeholder="Automatic"/>
+      </hbox>
+      <hbox align="center">
+        <label control="noctua-notes-codex-path" data-l10n-id="noctua-notes-codex-path-label"/>
+        <html:input id="noctua-notes-codex-path" type="text" flex="1" preference="extensions.noctua-notes.agent.codexPath" placeholder="Automatic"/>
+      </hbox>
     </groupbox>
   </vbox>
 </vbox>

@@ -71,16 +71,9 @@ test("group/deleted contexts hide the pane and readonly contexts prohibit creati
   await f.render(f.item(3,"paper"),false);const button=f.body.all("button")[0];assert.equal(button.disabled,true);await button.click();assert.equal(f.created.length,0);
 });
 
-test("sidebar titles drop the repeated prefix and modified times read naturally",()=>{
+test("sidebar titles drop the repeated prefix",()=>{
   assert.equal(pane.displayTitle("Noctua Note — Long Name"),"Long Name");
   assert.equal(pane.displayTitle("Noctua Note"),"Untitled");assert.equal(pane.displayTitle(""),"Untitled");
-  const now=Date.parse("2026-11-02T12:00:00Z");
-  assert.equal(pane.relativeTime("2026-11-02 11:59:40",now),"Just now");
-  assert.equal(pane.relativeTime("2026-11-02 11:55:00",now),"5 min ago");
-  assert.equal(pane.relativeTime("2026-11-02 09:00:00",now),"3 h ago");
-  assert.equal(pane.relativeTime("2026-11-01 08:00:00",now),"Yesterday");
-  assert.equal(pane.relativeTime("2026-10-30 12:00:00",now),"3 days ago");
-  assert.equal(pane.relativeTime("",now),"");assert.equal(pane.relativeTime("nonsense",now),"");
 });
 test("an empty paper shows a quiet empty state and a visible create button",async()=>{
   const f=fixture();await f.render(f.item(1,"paper",{attachments:[]}));

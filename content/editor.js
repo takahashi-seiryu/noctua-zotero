@@ -3,17 +3,105 @@ const PAIRS = { '(': ')', '[': ']', '{': '}', '$': '$' };
 const WRAPS = { ...PAIRS, '"': ['``', "''"], "'": ['`', "'"] };
 
 // Replaces [start, end) with text and selects [s0, s1). execCommand keeps ⌘Z working.
+let texBusy = false;  // our own insertion re-enters the input events; never pair that again
 function texEdit(ta, start, end, text, s0, s1 = s0) {
   ta.setSelectionRange(start, end);
-  if (!document.execCommand(text ? 'insertText' : 'delete', false, text)) ta.setRangeText(text, start, end);
+  texBusy = true;
+  const before = ta.value;
+  // execCommand reports success but edits nothing while another frame (e.g. a playing video) owns focus.
+  try { if (!document.execCommand(text ? 'insertText' : 'delete', false, text) || ta.value === before) ta.setRangeText(text, start, end); }
+  finally { texBusy = false; }
   ta.setSelectionRange(s0, s1);
   ta.dispatchEvent(new Event('input'));  // again, now the caret is in place (\cite{ picker)
 }
 
+// Same pairing rules for characters delivered by an input method instead of keydown.
+function texBeforeInput(e, ta) {
+  if (texBusy || e.isComposing || e.inputType !== 'insertText' || typeof e.data !== 'string' || e.data.length !== 1) return false;
+  return texKeys({key: e.data, isComposing: false, altKey: false, metaKey: false, ctrlKey: false, shiftKey: false,
+    preventDefault: () => e.preventDefault()}, ta);
+}
+
+// "just now", "5 min ago", "3 h ago", "Yesterday", "3 days ago", then a date. Empty for a note never saved.
+function timeAgo(iso, now = Date.now()) {
+  const time = Date.parse(iso || '');
+  if (!iso || Number.isNaN(time)) return '';
+  const minutes = Math.floor((now - time) / 60000);
+  if (minutes < 1) return 'just now';
+  if (minutes < 60) return minutes + ' min ago';
+  if (minutes < 1440) return Math.floor(minutes / 60) + ' h ago';
+  if (minutes < 2880) return 'Yesterday';
+  if (minutes < 10080) return Math.floor(minutes / 1440) + ' days ago';
+  return new Date(time).toLocaleDateString(undefined, {year: 'numeric', month: 'short', day: 'numeric'});
+}
+
+// Maps a caret position in the rendered preview to a source offset. Rendered text and LaTeX only
+// partly agree (commands, math, citations), so look for the text around the click in the source and
+// fall back to the same relative position.
+function mapCaret(rendered, offset, src) {
+  const squash = text => {
+    let out = '';const map = [];
+    for (let i = 0; i < text.length; i++) {
+      if (/\s/.test(text[i])) { if (out && out[out.length - 1] !== ' ') { out += ' '; map.push(i); } }
+      else { out += text[i]; map.push(i); }
+    }
+    return {text: out, map};
+  };
+  const r = squash(rendered), s = squash(src);
+  if (!s.text) return 0;
+  let at = 0;
+  while (at < r.map.length && r.map[at] < offset) at++;
+  const before = r.text.slice(Math.max(0, at - 10), at), after = r.text.slice(at, at + 10);
+  const guess = r.text.length ? Math.round(at / r.text.length * s.text.length) : 0;
+  const nearest = (needle, shift) => {
+    let best = -1, from = 0, index;
+    while ((index = s.text.indexOf(needle, from)) >= 0) {
+      if (best < 0 || Math.abs(index - guess) < Math.abs(best - guess)) best = index;
+      from = index + 1;
+    }
+    return best < 0 ? -1 : best + shift;
+  };
+  let pos = -1;
+  if (before.length + after.length >= 6) pos = nearest(before + after, before.length);
+  // Shorter and shorter neighbours until something in the source matches.
+  for (const n of [10, 7, 5, 3]) if (pos < 0 && before.length >= n) pos = nearest(before.slice(-n), n);
+  for (const n of [10, 7, 5, 3]) if (pos < 0 && after.length >= n) pos = nearest(after.slice(0, n), 0);
+  if (pos < 0) pos = guess;
+  pos = Math.min(Math.max(pos, 0), s.map.length);
+  return pos >= s.map.length ? src.length : s.map[pos];
+}
+
 function texKeys(e, ta) {
-  if (e.isComposing || e.altKey) return false;
+  // keyCode 229 means an input method (e.g. Korean) owns this key and will insert the
+  // character itself; texBeforeInput handles it instead, or the character is doubled.
+  if (texBusy || e.isComposing || e.altKey || e.keyCode === 229) return false;
+  // Typed characters are paired from `beforeinput` only. Handling them on keydown as well gave two
+  // routes to the same bracket (and `{{}}`); keydown keeps shortcuts and Backspace.
+  if (e.type === 'keydown' && e.key.length === 1 && !e.metaKey && !e.ctrlKey) return false;
   const { selectionStart: s, selectionEnd: t, value: v } = ta;
   const k = e.key;
+  if (k === 'Tab' && !e.metaKey && !e.ctrlKey) {
+    // Tab indents inside the source instead of moving focus out of the block (Esc, then Tab, leaves).
+    e.preventDefault();
+    const IND = '  ', shift = e.shiftKey;
+    const from = v.lastIndexOf('\n', s - 1) + 1;
+    if (!shift && !v.slice(s, t).includes('\n')) { texEdit(ta, s, t, IND, s + IND.length); return true; }
+    const last = t > s && v[t - 1] === '\n' ? t - 1 : t;
+    let to = v.indexOf('\n', last);
+    if (to < 0) to = v.length;
+    const lines = v.slice(from, to).split('\n');
+    const removed = [];
+    const out = lines.map(line => {
+      if (!shift) { removed.push(line ? -IND.length : 0); return line ? IND + line : line; }
+      const lead = /^( {1,2}|\t)/.exec(line)?.[0].length || 0;
+      removed.push(lead);
+      return line.slice(lead);
+    });
+    const newStart = Math.max(from, s - removed[0]);
+    const newEnd = s === t ? newStart : Math.max(newStart, t - removed.reduce((a, b) => a + b, 0));
+    texEdit(ta, from, to, out.join('\n'), newStart, newEnd);
+    return true;
+  }
   if (e.metaKey || e.ctrlKey) {
     const cmd = { b: '\\textbf{', i: '\\textit{' }[k.toLowerCase()];
     if (!cmd || e.shiftKey) return false;
@@ -97,7 +185,11 @@ window.startNoctuaNotes = function (host) {
   const uid = () => "b"+crypto.randomUUID();
   const esc = model.esc;
 
+  // The time of the last save sits left of the status and keeps itself current.
+  function updateSaveTime() { const el=$("save-time"); if(el)el.textContent=timeAgo(doc.updated); }
+  if(typeof setInterval==="function")setInterval(updateSaveTime,20000);
   function status(text, error=false) {
+    updateSaveTime();
     $("save-status").textContent=text;
     $("save-status").classList.toggle("error",error);
   }
@@ -175,26 +267,40 @@ window.startNoctuaNotes = function (host) {
           if(view._key===html+"|"+writing) return;
           view._key=html+"|"+writing;
           view.innerHTML=html;
+          view.closest(".nb")?.classList.toggle("has-video",!!view.querySelector(".tex-youtube"));
           view.querySelectorAll("iframe,video,audio,object,embed,script").forEach(el=>el.remove());
           if(!writing) view.querySelectorAll(".tex-youtube[data-yt-id]").forEach(box=>{
             const id=box.dataset.ytId,start=Number(box.dataset.ytStart)||0;
             if(!/^[\w-]{11}$/.test(id)||!Number.isSafeInteger(start))return;
-            const url="https://www.youtube-nocookie.com/embed/"+id+(start>0?"?start="+start:"");
-            // Remote pages must live in an unprivileged content <browser>; a plain
-            // <iframe> inside this chrome:// page stays blank.
-            let player;
-            if(document.createXULElement) {
-              player=document.createXULElement("browser");
-              player.setAttribute("type","content");player.setAttribute("remote","true");
-              player.setAttribute("maychangeremoteness","true");player.setAttribute("disablehistory","true");
-              player.setAttribute("disableglobalhistory","true");player.setAttribute("src",url);
-            } else {
-              player=document.createElement("iframe");player.src=url;
-              player.setAttribute("sandbox","allow-scripts allow-same-origin allow-presentation");
-              player.setAttribute("allow","encrypted-media; picture-in-picture; fullscreen");player.setAttribute("allowfullscreen","");
-            }
-            player.classList.add("yt-player");player.setAttribute("aria-label","YouTube video player");
-            box.prepend(player);
+            // A thumbnail card instead of a live player: YouTube refuses to play embeds opened from
+            // an app page (no valid referrer), so the card opens the video in the default browser.
+            const watch="https://www.youtube.com/watch?v="+id+(start>0?"&t="+start:"");
+            const poster=document.createElement("button");
+            poster.type="button";poster.className="yt-poster";poster.setAttribute("aria-label","Play on YouTube");poster.title="Open on YouTube";
+            const image=document.createElement("img");
+            image.alt="";image.referrerPolicy="no-referrer";image.loading="lazy";
+            // Best first (1280x720); older or low-resolution videos have no maxres file, so step down.
+            const sizes=["maxresdefault","sddefault","hqdefault"];let step=0;
+            const load=()=>{image.src="https://i.ytimg.com/vi/"+id+"/"+sizes[step]+".jpg";};
+            // YouTube answers a missing maxres/sd file with a 120px grey stand-in rather than an error.
+            image.addEventListener("load",()=>{if(image.naturalWidth<=120&&step<sizes.length-1){step++;load();}});
+            image.addEventListener("error",()=>{if(step<sizes.length-1){step++;load();}else image.remove();});
+            load();
+            const play=document.createElement("span");play.className="yt-play";play.setAttribute("aria-hidden","true");
+            poster.append(image,play);
+            // The embed endpoints refuse to play here (error 153: no valid referrer), but the regular
+            // watch page plays fine. Show only its player by cropping the page header and the rest.
+            poster.addEventListener("click",()=>{
+              // Created in this document: an element made in the main window loses its browser behaviour here.
+              if(!document.createXULElement||!host.loadRemote){host.openURL?.(watch);return;}
+              const player=document.createXULElement("browser");
+              for(const [name,value] of Object.entries({type:"content",remote:"true",maychangeremoteness:"true",disablehistory:"true",disableglobalhistory:"true"}))player.setAttribute(name,value);
+              player.classList.add("yt-player");player.setAttribute("aria-label","YouTube video player");
+              const frame=document.createElement("div");frame.className="yt-frame";
+              frame.append(player);poster.replaceWith(frame);
+              host.loadRemote?.(player,"https://www.youtube.com/watch?app=desktop&v="+id+(start>0?"&t="+start+"s":""));
+            });
+            box.prepend(poster);
           });
           view.querySelectorAll("[data-tex-label]").forEach(el=>{el.id="note-label-"+el.dataset.texLabel;});
         }
@@ -212,13 +318,26 @@ window.startNoctuaNotes = function (host) {
     else document.querySelector(`[data-block-id="${CSS.escape(b.id)}"] .ink`)?.focus();
     return b;
   }
-  function edit(id) {
+  function edit(id, caret=null) {
     const block=document.querySelector(`[data-block-id="${CSS.escape(id)}"]`);
     if(editing && editing!==id) document.querySelector(`[data-block-id="${CSS.escape(editing)}"]`)?.classList.remove("editing");
     editing=id;focusBlock=id;
     block?.classList.add("editing");
     const ta=block?.querySelector("textarea");
-    ta?.focus();ta?._grow?.();
+    if(!ta)return;
+    // Focusing a textarea scrolls its caret (at the end of the text) into view, and the source
+    // column is still opening, so a tall block would fling the page to its bottom. Keep the view
+    // where the click happened while the layout settles.
+    const scroller=document.scrollingElement,y=scroller.scrollTop;
+    ta.focus({preventScroll:true});ta._grow?.();
+    if(caret!==null)ta.setSelectionRange(caret,caret);
+    const until=performance.now()+500;
+    let moved=false;const mark=()=>{moved=true;};
+    for(const type of ["wheel","touchmove","keydown"])window.addEventListener(type,mark,{once:true,passive:true});
+    (function hold(){
+      if(!moved&&Math.abs(scroller.scrollTop-y)>1)scroller.scrollTop=y;
+      if(!moved&&performance.now()<until)requestAnimationFrame(hold);
+    })();
   }
   function growTitle() {
     const t=$("title");
@@ -286,10 +405,14 @@ window.startNoctuaNotes = function (host) {
       const bar=document.createElement("div");bar.className="block-inserter";
       bar.setAttribute("role","group");bar.setAttribute("aria-label",`Insert at position ${index+1}`);
       const pill=document.createElement("div");pill.className="ins-pill";bar.append(pill);
-      for(const [type,label,icon] of [["text","Text","type"],["ink","Drawing","pen-line"]]) {
+      for(const [type,label,icon] of [["text","Text","type"],["ink","Drawing","pen-line"],["image","Image","image"]] ) {
         const button=document.createElement("button");button.type="button";
         button.append(NoctuaIcons.create(icon,13),label);button.setAttribute("aria-label",`Add ${label.toLowerCase()} here`);
-        button.addEventListener("click",()=>insert(type,null,index));pill.append(button);
+        button.addEventListener("click",()=>{
+          if(type==="image"){imageIndex=index;$("image-input").click();}
+          else insert(type,null,index);
+        });
+        pill.append(button);
       }
       return bar;
     }
@@ -320,10 +443,19 @@ window.startNoctuaNotes = function (host) {
         const textarea=document.createElement("textarea");textarea.value=b.src;textarea.spellcheck=false;
         textarea.setAttribute("aria-label","LaTeX block source");
         textarea.placeholder="Write text, $inline math$, or \\section{A heading}";
-        const grow=()=>{textarea.style.height="auto";textarea.style.height=Math.max(96,textarea.scrollHeight+2)+"px";};
+        const grow=()=>{if(!textarea.clientWidth)return;textarea.style.height="auto";textarea.style.height=Math.max(96,textarea.scrollHeight+2)+"px";};
         textarea.addEventListener("input",()=>{b.src=textarea.value;grow();renderPreviews();change("text:"+b.id);});
         textarea._grow=grow;
+        // The source column animates open, so the first measurement can happen at a sliver of its
+        // final width and overshoot the height. Re-measure whenever its real width changes.
+        if(typeof ResizeObserver==="function") {
+          let lastWidth=0;
+          new ResizeObserver(()=>{const w=textarea.clientWidth;if(w&&w!==lastWidth){lastWidth=w;grow();}}).observe(textarea);
+        }
+        const suggest=typeof NoctuaCiteSuggest!=="undefined" ? NoctuaCiteSuggest.attach(textarea,{references:host.references,report}) : null;
+        textarea.addEventListener("beforeinput",e=>texBeforeInput(e,textarea));
         textarea.addEventListener("keydown",e=>{
+          if(suggest?.handleKey(e))return;
           if(texKeys(e,textarea))return;
           if(e.key==="Escape" || (e.key==="Enter"&&(e.metaKey||e.ctrlKey))) {
             e.preventDefault();editing=null;el.classList.remove("editing");view.focus();
@@ -333,8 +465,21 @@ window.startNoctuaNotes = function (host) {
         const view=document.createElement("div");view.className="nb-view tex-view";view.tabIndex=0;
         view.setAttribute("aria-label","Rendered text block; activate to edit source");
         view.addEventListener("click",e=>{
-          if(e.target.closest("a") || !window.getSelection().isCollapsed)return;
-          edit(b.id);
+          // Links and the video card do their own thing; they must not drop the block into editing.
+          if(e.target.closest("a,.yt-poster,.yt-frame") || !window.getSelection().isCollapsed)return;
+          // Put the source caret where the click landed in the rendered text.
+          let caret=null;
+          try {
+            const hit=document.caretPositionFromPoint?.(e.clientX,e.clientY);
+            if(hit && view.contains(hit.offsetNode)) {
+              let offset=0;
+              const walker=document.createTreeWalker(view,NodeFilter.SHOW_TEXT);
+              for(let node=walker.nextNode();node&&node!==hit.offsetNode;node=walker.nextNode())offset+=node.nodeValue.length;
+              offset+=hit.offsetNode.nodeType===Node.TEXT_NODE?hit.offset:0;
+              caret=mapCaret(view.textContent,offset,b.src);
+            }
+          } catch(_) {caret=null;}
+          edit(b.id,caret);
         });
         view.addEventListener("keydown",e=>{if(e.key==="Enter"){e.preventDefault();edit(b.id);}});
         wrap.append(textarea,view);el.append(wrap);
@@ -354,14 +499,15 @@ window.startNoctuaNotes = function (host) {
     }
     renderPreviews();
   }
-  async function addImages(files) {
+  let imageIndex=null;
+  async function addImages(files,index=doc.blocks.length) {
     for(const file of files) {
       if(!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(file.type)) throw new Error("Choose a PNG, JPEG, WebP, GIF or SVG image.");
       if(file.size>8*1024*1024) throw new Error("Each image must be 8 MB or smaller in this prototype.");
       const data=await new Promise((resolve,reject)=>{
         const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.readAsDataURL(file);
       });
-      insert("image",data);
+      insert("image",data,index++);
     }
   }
   async function reload() {
@@ -404,7 +550,12 @@ window.startNoctuaNotes = function (host) {
     const href=anchor.getAttribute("href");
     if(anchor.dataset.texRef) {
       const target=[...$("blocks").querySelectorAll("[data-tex-label]")].find(el=>el.dataset.texLabel===anchor.dataset.texRef);
-      target?.scrollIntoView({block:"center"});
+      if(target) {
+        target.scrollIntoView({block:"center",behavior:"smooth"});
+        // Flash what was referenced (equation, heading, theorem, table…) so it is easy to spot.
+        const mark=target.closest(".tex-display,.tex-h,.tex-thm,.tex-figure,.tex-table-wrap,li,p")||target.parentElement;
+        if(mark) {mark.classList.remove("tex-flash");void mark.offsetWidth;mark.classList.add("tex-flash");setTimeout(()=>mark.classList.remove("tex-flash"),1600);}
+      }
     } else if(href.startsWith("#")) document.getElementById(decodeURIComponent(href.slice(1)))?.scrollIntoView();
     else host.openURL?.(href);
   },true);
@@ -417,31 +568,20 @@ window.startNoctuaNotes = function (host) {
     if(first)edit(first.id);else insert("text",null,0);
   });
   $("preamble").addEventListener("input",()=>{doc.preamble=$("preamble").value;renderPreviews();change("preamble");});
+  $("preamble").addEventListener("beforeinput",e=>texBeforeInput(e,$("preamble")));
   $("preamble").addEventListener("keydown",e=>{if(texKeys(e,$("preamble")))return;if(e.key==="Escape")$("preamble-panel").open=false;});
   $("undo").addEventListener("click",()=>restoreHistory());
   $("redo").addEventListener("click",()=>restoreHistory(true));
   $("help").addEventListener("click",()=>$("note-help").showModal());
   $("close-help").addEventListener("click",()=>$("note-help").close());
-  $("add-text").addEventListener("click",()=>insert("text"));
-  $("add-ink").addEventListener("click",()=>insert("ink"));
-  $("insert-citation").addEventListener("click",async()=>{
-    try {
-      const focused=doc.blocks.find(b=>b.id===focusBlock&&b.type==="text");
-      const textarea=focused && document.querySelector(`[data-block-id="${CSS.escape(focused.id)}"] textarea`);
-      const range=textarea ? [textarea.selectionStart,textarea.selectionEnd] : null;
-      const key=await host.pickCitation?.();if(!key)return;
-      const b=focused || insert("text");edit(b.id);
-      const ta=document.querySelector(`[data-block-id="${CSS.escape(b.id)}"] textarea`);
-      const [start,end]=range || [b.src.length,b.src.length];
-      const text="\\cite{"+key+"}";texEdit(ta,start,end,text,start+text.length);
-    } catch(error) {report(error);}
+  $("image-input").addEventListener("change",()=>{
+    const at=imageIndex ?? doc.blocks.length;imageIndex=null;
+    addImages([...$("image-input").files],at).catch(report);$("image-input").value="";
   });
-  $("add-image").addEventListener("click",()=>$("image-input").click());
-  $("image-input").addEventListener("change",()=>{addImages($("image-input").files).catch(report);$("image-input").value="";});
   $("reload").addEventListener("click",()=>reload().catch(report));
   const menu=$("more-menu"), more=$("more");
   function setMenu(open) {menu.hidden=!open;more.setAttribute("aria-expanded",String(open));}
-  more.addEventListener("click",e=>{e.stopPropagation();setMenu(menu.hidden);if(!menu.hidden)menu.querySelector("button:not(:disabled)")?.focus();});
+  more.addEventListener("click",e=>{e.stopPropagation();setMenu(menu.hidden);if(!menu.hidden&&e.detail===0)menu.querySelector("button:not(:disabled)")?.focus();});
   menu.addEventListener("click",()=>setMenu(false));
   document.addEventListener("click",e=>{if(!menu.hidden&&!e.target.closest(".menu-wrap"))setMenu(false);});
   document.addEventListener("keydown",e=>{if(e.key==="Escape"&&!menu.hidden){setMenu(false);more.focus();}});
@@ -496,6 +636,17 @@ window.startNoctuaNotes = function (host) {
     });
     bar.append(recover);$("message").after(bar);
   }
+  function applyProposal(proposal, stamp) {
+    if(stamp!==contentSnapshot() && !window.confirm("The note changed while the assistant was working. Apply its proposal anyway? Undo restores your current version."))return false;
+    pads.forEach(p=>p.finish());
+    doc.title=proposal.title;doc.preamble=proposal.preamble;doc.blocks=clone(proposal.blocks);
+    editing=null;render();change();
+    document.title="Noctua Notes — "+doc.title;host.onTitle?.(doc.title);
+    if(doc.preamble.trim()){$("preamble-panel").hidden=false;$("preamble-panel").open=true;}
+    return true;
+  }
+  NoctuaChat.mount({host,document,window,store,report,apply:applyProposal,
+    snapshot:()=>{pads.forEach(p=>p.finish());return {doc:clone(doc),stamp:contentSnapshot()};}});
   render();updateHistory();document.title="Noctua Notes — "+doc.title;
   status(session.item ? "Saved" : "New note");
   if(!session.item && !host.draft && doc.blocks.length===1 && doc.blocks[0].type==="text" && !doc.blocks[0].src) {

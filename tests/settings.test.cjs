@@ -6,19 +6,19 @@ const vm=require("node:vm");
 const settings=require("../lib/settings.js");
 
 async function fixture(value, failPane=false) {
-  let observer, registration, removed=0, unregistered=0;
+  let observer, previewObserver, previewValue="right", inkValues={}, inkObservers=[], widthValue=undefined, registration, removed=0, unregistered=0;
   const writes=[],opened=[],errors=[];
   const Zotero={
-    Prefs:{get(key,global){assert.equal(key,settings.THEME_PREF);assert.equal(global,true);return value;},
+    Prefs:{get(key,global){assert.equal(global,true);if(key===settings.WIDTH_PREF)return widthValue;if(settings.INK_PREFS.includes(key))return inkValues[key];return key===settings.PREVIEW_PREF?previewValue:(assert.equal(key,settings.THEME_PREF),value);},
       set(key,next,global){assert.equal(key,settings.THEME_PREF);assert.equal(global,true);value=next;writes.push(next);observer?.();},
-      registerObserver(key,fn,global){assert.equal(key,settings.THEME_PREF);assert.equal(global,true);observer=fn;return 17;},
-      unregisterObserver(token){assert.equal(token,17);observer=null;removed++;}},
+      registerObserver(key,fn,global){assert.equal(global,true);if(key===settings.PREVIEW_PREF){previewObserver=fn;return 18;}if(settings.INK_PREFS.includes(key)||key===settings.WIDTH_PREF){inkObservers.push(fn);return 19;}assert.equal(key,settings.THEME_PREF);observer=fn;return 17;},
+      unregisterObserver(token){if(token===19){inkObservers.pop();return;}if(token===18){previewObserver=null;return;}assert.equal(token,17);observer=null;removed++;}},
     PreferencePanes:{async register(options){registration=options;if(failPane)throw Error("Registration failed");return options.id;},
       unregister(id){assert.equal(id,settings.PANE_ID);unregistered++;}},
     Utilities:{Internal:{openPreferences:id=>opened.push(id)}},logError:error=>errors.push(error)
   };
   const service=await settings.create({Zotero,pluginID:"noctua@test",rootURI:"file:///plugin/"}).catch(error=>error);
-  return {service,Zotero,writes,opened,errors,get registration(){return registration;},get removed(){return removed;},get unregistered(){return unregistered;},external(next){value=next;observer?.();}};
+  return {service,Zotero,writes,opened,errors,get registration(){return registration;},get removed(){return removed;},get unregistered(){return unregistered;},external(next){value=next;observer?.();},externalPreview(next){previewValue=next;previewObserver?.();},setWidth(next){widthValue=next;inkObservers.forEach(fn=>fn());},setInk(key,next){inkValues[key]=next;inkObservers.forEach(fn=>fn());}};
 }
 test("missing and invalid preferences use light; system requires an explicit selection",async()=>{
   for(const value of [undefined,null,"",false,1,"auto","DARK","system "]) {
@@ -58,9 +58,9 @@ test("native XHTML controls bind directly to the persistent plugin preference",(
 p=E.parse('content/preferences.xhtml').getroot()
 n={'x':'http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul'}
 assert p.attrib['id']=='noctua-notes-preferences'
-assert [e.attrib['value'] for e in p.findall('.//x:menuitem',n)]==['light','dark','system']
+assert [e.attrib['value'] for e in p.findall('.//x:menuitem',n)]==['light','dark','system','right','below']
 assert p.find('.//x:label[@control="noctua-notes-theme"]',n) is not None
-assert p.find('.//x:menulist',n).attrib['preference']=='extensions.noctua-notes.theme'
+assert [m.attrib['preference'] for m in p.findall('.//x:menulist',n)]==['extensions.noctua-notes.theme','extensions.noctua-notes.previewPosition']
 `],{cwd:require("node:path").join(__dirname,".."),encoding:"utf8"});
   assert.equal(result.status,0,result.stderr);
 });
@@ -69,9 +69,10 @@ async function bootstrapFixture(cleanup=async()=>({trashed:0,detached:0,skipped:
   const menus=[],loaded=[],exported=[],errors=[];
   const owner={Zotero_Tabs:{selectedID:"active"},ZoteroPane:{getSelectedLibraryID:()=>1}};
   const storage={cleanupLegacyPreviews:cleanup,isSource:item=>!!item.source,load:async item=>{loaded.push(item);return {doc:{title:item.key}};}};
-  const scope={TextEncoder,TextDecoder,IOUtils:{},PathUtils:{},
+  const scope={TextEncoder,TextDecoder,IOUtils:{},PathUtils:{},ChromeUtils:{importESModule:()=>({Subprocess:{}})},
     Cc:{"@mozilla.org/addons/addon-manager-startup;1":{getService:()=>({registerChrome:()=>({destruct(){}})})}},Ci:{},
-    Services:{io:{newURI:uri=>uri},uuid:{},scriptloader:{loadSubScript(uri,target){
+    Services:{io:{newURI:uri=>uri},uuid:{},dirsvc:{get:()=>({path:"/tmp"})},env:{get:()=>""},scriptloader:{loadSubScript(uri,target){
+      if(uri.endsWith("agent.js"))target.NoctuaAgent={create:()=>({cleanup:async()=>{},providers:async()=>[],run(){},forget(){}})};
       if(uri.endsWith("settings.js"))target.NoctuaNotesSettings={create:async()=>({appearance:{},destroy(){}})};
       if(uri.endsWith("storage.js"))target.NoctuaNotesStorage=function(){return storage;};
       if(uri.endsWith("activation.js"))target.NoctuaNotesActivation={installNotes:()=>()=>{}};
@@ -122,4 +123,51 @@ test("startup exposes nonblocking preview cleanup and reports summary or rejecte
   finish(summary);assert.equal(await f.notes.previewCleanup,summary);assert.deepEqual(f.errors,[error]);
   const failed=await bootstrapFixture(async()=>{throw error;});
   const result=await failed.notes.previewCleanup;assert.equal(result.errors[0],error);assert.deepEqual(failed.errors,[error]);
+});
+
+test("preview position defaults to right, accepts only below, and notifies subscribers",async()=>{
+  const f=await fixture("light");
+  assert.equal(f.service.appearance.getPreviewPosition(),"right");
+  const seen=[];f.service.appearance.subscribe(()=>seen.push(f.service.appearance.getPreviewPosition()));
+  f.externalPreview("below");f.externalPreview("sideways");
+  assert.deepEqual(seen,["below","right"]);
+  f.service.destroy();f.externalPreview("below");assert.equal(seen.length,2);
+});
+
+test("pen accent colours fall back to the defaults, accept only #rrggbb and notify subscribers",async()=>{
+  const f=await fixture("light"),colors=()=>f.service.appearance.getInkColors();
+  assert.deepEqual(colors(),settings.INK_DEFAULTS);
+  const seen=[];f.service.appearance.subscribe(()=>seen.push(colors()[0]));
+  f.setInk(settings.INK_PREFS[0],"#101010");f.setInk(settings.INK_PREFS[1],"#AABBCC");f.setInk(settings.INK_PREFS[2],"red");f.setInk(settings.INK_PREFS[3],"#12345");
+  assert.deepEqual(colors(),["#101010","#aabbcc",...settings.INK_DEFAULTS.slice(2)]);
+  assert.ok(seen.length>=3);
+  const count=seen.length;f.service.destroy();f.setInk(settings.INK_PREFS[1],"#000000");assert.equal(seen.length,count);
+});
+test("pen colour defaults agree across prefs.js, the reset script and the settings module",()=>{
+  const prefs=fs.readFileSync(require.resolve("../prefs.js"),"utf8"),reset=fs.readFileSync(require.resolve("../content/preferences.js"),"utf8");
+  settings.INK_DEFAULTS.forEach((color,index)=>{
+    assert.match(prefs,new RegExp(`ink\\.color${index}", "${color}"`));
+    assert.ok(reset.includes(`"${color}"`),color||"(Ink)");
+  });
+});
+
+test("note width defaults to 60%, snaps to steps of 5 within 50-100 and notifies subscribers",async()=>{
+  const f=await fixture("light"),width=()=>f.service.appearance.getContentWidth();
+  assert.equal(width(),60);
+  const seen=[];f.service.appearance.subscribe(()=>seen.push(width()));
+  for(const [input,expected] of [[70,70],[43,50],[250,100],[72,70],["80",80],["wide",60],[null,50]]){
+    f.setWidth(input);assert.equal(width(),expected,String(input));
+  }
+  assert.ok(seen.length>=7);
+  assert.match(fs.readFileSync(require.resolve("../prefs.js"),"utf8"),/contentWidth", 60\)/);
+  f.service.destroy();
+});
+
+test("the pane script keeps the note-width value label in step with the slider",()=>{
+  const script=fs.readFileSync(require.resolve("../content/preferences.js"),"utf8");
+  const slider={value:"60",dataset:{},listeners:{},addEventListener(type,fn){this.listeners[type]=fn;}},label={value:""};
+  const document={getElementById:id=>id==="noctua-notes-width"?slider:id==="noctua-notes-width-value"?label:null,addEventListener(){}};
+  vm.runInNewContext(script,{document,window:{addEventListener(){}},setTimeout(){},Zotero:{Prefs:{set(){}}}});
+  assert.equal(label.value,"60%");
+  slider.value="75";slider.listeners.input();assert.equal(label.value,"75%");
 });

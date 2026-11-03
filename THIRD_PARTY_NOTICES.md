@@ -14,7 +14,11 @@
 - `content/icons/{sun,moon,settings}.svg` and the inline editor
   icons are official [Lucide](https://lucide.dev/icons/) artwork, obtained from
   `https://github.com/lucide-icons/lucide/tree/main/icons` on 2026-11-02.
+  The `eraser`, `history` and `paperclip` icons come from lucide-static 1.66.0 (ISC), same source and treatment.
   Editor action icons are sized to 16px; all retain Lucide's 2-unit stroke and original paths.
+- `content/icons/claude.svg` and `content/icons/codex.svg` are the colored Claude and Codex marks from
+  @lobehub/icons-static-svg (MIT). Both are trademarks of their owners (Anthropic and OpenAI) and appear
+  only to identify the matching assistant.
   Copyright (c) 2026 Lucide Icons and Contributors; ISC license. The moon icon
   also carries the Feather MIT attribution. Both licenses are retained in
   `content/icons/LICENSE`.

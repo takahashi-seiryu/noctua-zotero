@@ -21,7 +21,7 @@ const NoctuaLatex = (() => {
     question: ['Question', 'definition'], exercise: ['Exercise', 'definition'], assumption: ['Assumption', 'definition'],
     remark: ['Remark', 'remark'], note: ['Note', 'remark'],
   };
-  const MATH_ENVS = new Set(['equation', 'align', 'gather', 'multline', 'alignat', 'displaymath']);
+  const MATH_ENVS = new Set(['equation', 'align', 'gather', 'multline', 'alignat', 'displaymath', 'eqnarray']);
   const HEADINGS = { section: 0, subsection: 1, subsubsection: 2 };
 
   // ------------------------------------------------------------ scanning helpers
@@ -150,7 +150,9 @@ const NoctuaLatex = (() => {
 
   function display(body, env, st) {
     const anchors = [];
-    const base = env ? env.replace('*', '') : null;
+    let base = env ? env.replace('*', '') : null;
+    // eqnarray is `a & = & b`; align wants `a &= b`, so fold the first two column marks together.
+    if (base === 'eqnarray') { body = splitTop(body, '\\\\').map((row) => row.replace(/^([^&]*)&([^&]*)&/, '$1&$2 ')).join('\\\\'); base = 'align'; }
     const numbered = !!env && !env.endsWith('*') && base !== 'displaymath';
     const noNum = (t) => /\\(nonumber|notag)\b/.test(t);
     const clean = (t) => t.replace(/\\(nonumber|notag)\b/g, '');
@@ -182,7 +184,7 @@ const NoctuaLatex = (() => {
     '\\,': ' ', '\\ ': ' ', '\\;': ' ', '\\!': '', '\\newline': '<br>', '\\noindent': '', '\\hfill': '',
     '\\par': '', '\\centering': '', '\\smallskip': '', '\\medskip': '', '\\bigskip': '', '\\copyright': '©',
     '\\LaTeX': '<span class="tex-logo">L<sup>a</sup>T<sub>e</sub>X</span>', '\\TeX': '<span class="tex-logo">T<sub>e</sub>X</span>',
-    '\\textbackslash': '\\', '\\slash': '/', '\\textendash': '–', '\\textemdash': '—',
+    '\\textbackslash': '\\', '\\slash': '/', '\\hrule': '<hr class="tex-rule">', '\\newpage': '', '\\clearpage': '', '\\vfill': '', '\\hfil': '', '\\textendash': '–', '\\textemdash': '—',
   };
   const STYLE_ARG = {
     emph: ['<em>', '</em>'], textit: ['<i>', '</i>'], textbf: ['<b>', '</b>'], texttt: ['<code>', '</code>'],
@@ -192,6 +194,11 @@ const NoctuaLatex = (() => {
   };
   const STYLE_SWITCH = { '\\bf': STYLE_ARG.textbf, '\\it': STYLE_ARG.textit, '\\em': STYLE_ARG.emph, '\\tt': STYLE_ARG.texttt, '\\sc': STYLE_ARG.textsc, '\\sf': STYLE_ARG.textsf };
 
+  // Named colours and #rgb/#rrggbb only; anything else is ignored rather than passed to CSS.
+  const safeColor = (c) => {
+    const v = String(c).trim();
+    return /^#[0-9a-f]{3}([0-9a-f]{3})?$/i.test(v) || /^[a-z]{3,20}$/i.test(v) ? v : null;
+  };
   const safeUrl = (u) => /^(https?:|mailto:)/i.test(u.trim()) ? u.trim() : null;
 
   function inline(s, st) {
@@ -287,6 +294,29 @@ const NoctuaLatex = (() => {
           i = a.end;
           continue;
         }
+        if (cmd === 'vspace' || cmd === 'hspace' || cmd === 'vspace*' || cmd === 'hspace*' || cmd === 'vskip' || cmd === 'hskip') {
+          // Spacing commands carry a length; the preview ignores them but must not print it.
+          i = cmd === 'vskip' || cmd === 'hskip' ? j + (/^\s*[-+\d.]+\s*[a-z]{2}(?:\s+plus\s+[-+\d.]+\s*[a-z]{2})?/i.exec(s.slice(j))?.[0].length || 0) : reqArg(s, j).end;
+          continue;
+        }
+        if (cmd === 'title' || cmd === 'author' || cmd === 'date') {
+          const a = reqArg(s, j);
+          (st.meta ||= {})[cmd] = a.text;
+          i = a.end;
+          continue;
+        }
+        if (cmd === 'maketitle') {
+          const meta = st.meta || {};
+          out += `<div class="tex-title">${meta.title ? `<h1>${inline(meta.title, st)}</h1>` : ''}${meta.author ? `<p class="tex-author">${inline(meta.author, st)}</p>` : ''}${meta.date ? `<p class="tex-date">${inline(meta.date, st)}</p>` : ''}</div>`;
+          i = j;
+          continue;
+        }
+        if (cmd === 'textcolor' || cmd === 'colorbox') {
+          const c = reqArg(s, j), a = reqArg(s, c.end), color = safeColor(c.text);
+          out += color ? `<span style="${cmd === 'colorbox' ? 'background' : 'color'}:${color}">${inline(a.text, st)}</span>` : inline(a.text, st);
+          i = a.end;
+          continue;
+        }
         if (cmd === 'today') { text(new Date().toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })); i = j; continue; }
         if (STYLE_SWITCH[whole]) { i = j; continue; }  // only meaningful inside a {..} group, handled below
         // Unknown command: show it, muted, rather than silently dropping it.
@@ -297,7 +327,12 @@ const NoctuaLatex = (() => {
       if (c === '{') {
         const g = group(s, i);
         const sw = /^\s*(\\[A-Za-z]+)\b\s*/.exec(g.text);
-        if (sw && STYLE_SWITCH[sw[1]]) {
+        const colored = /^\s*\\color\s*\{([^}]*)\}\s*/.exec(g.text);
+        if (colored) {
+          const color = safeColor(colored[1]);
+          const inner = inline(g.text.slice(colored[0].length), st);
+          out += color ? `<span style="color:${color}">${inner}</span>` : inner;
+        } else if (sw && STYLE_SWITCH[sw[1]]) {
           const [o, cl] = STYLE_SWITCH[sw[1]];
           out += o + inline(g.text.slice(sw[0].length), st) + cl;
         } else out += inline(g.text, st);
@@ -305,11 +340,29 @@ const NoctuaLatex = (() => {
         continue;
       }
       if (c === '}') { i++; continue; }
+      if (s.startsWith('~~', i) && /\S/.test(s[i + 2] || '')) {
+        const e = s.indexOf('~~', i + 2);
+        if (e > i + 2 && /\S/.test(s[e - 1])) { out += `<s>${inline(s.slice(i + 2, e), st)}</s>`; i = e + 2; continue; }
+      }
       if (c === '~') { out += '&nbsp;'; i++; continue; }
       if (s.startsWith('---', i)) { out += '—'; i += 3; continue; }
       if (s.startsWith('--', i)) { out += '–'; i += 2; continue; }
       if (s.startsWith('``', i)) { out += '“'; i += 2; continue; }
       if (s.startsWith("''", i)) { out += '”'; i += 2; continue; }
+      // Markdown emphasis and code. Delimiters must hug the text, so `2 * 3 * 4` stays arithmetic.
+      if (s.startsWith('**', i) && /\S/.test(s[i + 2] || '')) {
+        const e = s.indexOf('**', i + 2);
+        if (e > i + 2 && /\S/.test(s[e - 1]) && !s.slice(i, e).includes('\n\n')) { out += `<b>${inline(s.slice(i + 2, e), st)}</b>`; i = e + 2; continue; }
+      }
+      if (c === '*' && s[i + 1] !== '*' && /\S/.test(s[i + 1] || '')) {
+        let e = i + 1;
+        while ((e = s.indexOf('*', e)) >= 0 && (s[e + 1] === '*' || !/\S/.test(s[e - 1]))) e += s[e + 1] === '*' ? 2 : 1;
+        if (e > i + 1 && !s.slice(i, e).includes('\n\n')) { out += `<em>${inline(s.slice(i + 1, e), st)}</em>`; i = e + 1; continue; }
+      }
+      if (c === '`' && s[i + 1] !== '`' && s[i - 1] !== '`') {
+        const e = s.indexOf('`', i + 1);
+        if (e > i + 1 && !s.slice(i, e).includes('\n') && s[e + 1] !== '`') { out += `<code>${esc(s.slice(i + 1, e))}</code>`; i = e + 1; continue; }
+      }
       if (c === '`') { out += '‘'; i++; continue; }
       if (c === "'") { out += '’'; i++; continue; }
       if (c === '\n') { out += ' '; i++; continue; }
@@ -570,6 +623,48 @@ const NoctuaLatex = (() => {
     return `<div class="tex-youtube" data-yt-id="${id}" data-yt-start="${seconds > 0 && start ? seconds : 0}"><a class="tex-yt-link" href="https://www.youtube.com/watch?v=${id}${seconds > 0 && start ? '&t=' + seconds : ''}" target="_blank" rel="noopener">▶ Watch on YouTube</a></div>`;
   }
 
+  const MD_BULLET = /^\s{0,3}([-*+])\s+(\S.*)$/, MD_NUMBER = /^\s{0,3}(\d{1,3})[.)]\s+(\S.*)$/;
+  function markdownLine(s, i, lineEnd, line, st) {
+    const h = /^(#{1,4})\s+(.+?)\s*#*\s*$/.exec(line);
+    if (h) {
+      const kind = ['section', 'subsection', 'subsubsection', 'paragraph'][h[1].length - 1];
+      return {html: kind === 'paragraph' ? `<p class="noindent">${inline(`\\textbf{${h[2]}}`, st)}</p>` : heading(kind, '*', h[2], st), end: lineEnd, heading: true};
+    }
+    if (/^\s{0,3}([-*_])(\s*\1){2,}\s*$/.test(line)) return {html: '<hr class="tex-rule">', end: lineEnd};
+    const fence = /^\s*(```|~~~)\s*\S*\s*$/.exec(line);
+    if (fence) {
+      const close = new RegExp('^\\s*' + fence[1] + '\\s*$', 'm');
+      const rest = s.slice(lineEnd + 1), m = close.exec(rest);
+      const code = m ? rest.slice(0, m.index) : rest;
+      return {html: `<pre class="tex-verbatim">${esc(code.replace(/\n$/, ''))}</pre>`, end: m ? lineEnd + 1 + m.index + m[0].length : s.length};
+    }
+    if (/^\s{0,3}>/.test(line)) {
+      const lines = [];
+      let k = i;
+      while (k < s.length) {
+        const e = s.indexOf('\n', k), stop = e < 0 ? s.length : e, l = s.slice(k, stop);
+        if (!/^\s{0,3}>/.test(l)) break;
+        lines.push(l.replace(/^\s{0,3}>\s?/, ''));
+        k = stop + 1;
+      }
+      return {html: `<div class="tex-quote">${blocks(lines.join('\n'), {...st, firstPara: true}, st)}</div>`, end: Math.min(k - 1, s.length)};
+    }
+    const bullet = MD_BULLET.exec(line), number = bullet ? null : MD_NUMBER.exec(line);
+    if (bullet || number) {
+      const rx = bullet ? MD_BULLET : MD_NUMBER, items = [];
+      let k = i;
+      while (k < s.length) {
+        const e = s.indexOf('\n', k), stop = e < 0 ? s.length : e, m = rx.exec(s.slice(k, stop));
+        if (!m) break;
+        items.push(m[2]);
+        k = stop + 1;
+      }
+      const tex = items.map((t) => '\\item ' + t).join('\n');
+      return {html: environment(bullet ? 'itemize' : 'enumerate', null, tex, st), end: Math.min(k - 1, s.length)};
+    }
+    return null;
+  }
+
   function blocks(s, st, root = null) {
     let out = '', para = '', i = 0, noindent = false;
     const flush = () => {
@@ -607,6 +702,10 @@ const NoctuaLatex = (() => {
           flush(); out += player; i = lineEnd; noindent = true; st.firstPara = false;
           continue;
         }
+        // Markdown conveniences, only at the start of a line: #-headings, - / 1. lists, > quotes,
+        // --- rules and ``` code fences. LaTeX commands never start with these characters.
+        const md = markdownLine(s, i, lineEnd, line, st);
+        if (md) { flush(); out += md.html; i = md.end; noindent = true; st.firstPara = md.heading === true; continue; }
       }
       const c = s[i];
       if (c === '\n') {

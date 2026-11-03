@@ -11,19 +11,26 @@ const Ink = (() => {
   const GUTTER = 64;                   // room beside wide pads for the block tools
   const MAX_W = 6000, MAX_H = 8;       // units wide; thousands of units tall
   const EDGE = 80, GROW_W = 400, GROW_H = 300;  // units
-  const COLORS = ['#e8e6e1', '#8b85ff', '#f7768e', '#9ece6a', '#e0af68'];
-  const WIDTHS = [1.4, 2.4, 4.5];
+  // Strokes in the original dark-page palette are re-tinted on light pages; any other colour is drawn as chosen.
+  const LEGACY = new Set(['#e8e6e1', '#8b85ff', '#f7768e', '#9ece6a', '#e0af68']);
+  const INK = '#e8e6e1';                // adapts to the theme
+  const ACCENTS = ['#3e63dd', '#e5484d', '#30a46c', '#f76b15'];
+  let COLORS = [INK, ...ACCENTS];
+  const WIDTHS = [2.2, 4, 7];         // stroke units; drawn about 1.1, 2 and 3.5 px wide at mouse pressure
   // Shared by every pad, like picking up a pen; the last pen is remembered.
   const saved = (() => { try { return JSON.parse(store.get('noctua.inkTool') || 'null'); } catch { return null; } })();
   const tool = {
-    color: COLORS.includes(saved?.color) ? saved.color : COLORS[0],
+    color: /^#[0-9a-f]{6}$/i.test(saved?.color || '') ? saved.color : COLORS[0],
     width: WIDTHS.includes(saved?.width) ? saved.width : WIDTHS[2],
     eraser: false,
   };
   const saveTool = () => { try { store.set('noctua.inkTool', JSON.stringify({ color: tool.color, width: tool.width })); } catch {} };
   const pads = new Set();
 
+  const PRESSURE_MOUSE = 0.5;
   const segWidth = (s, p, scale) => Math.max(0.6, s.w * scale * (0.35 + 0.9 * p));
+  // Width in screen pixels that a stroke of `w` units really gets at the default pressure.
+  const previewPx = (w) => Math.max(1, w * PX_PER_UNIT * (0.35 + 0.9 * PRESSURE_MOUSE));
 
   // Light pages show the dark-page palette inverted with hues kept, matching
   // CSS `invert(1) hue-rotate(180deg)` without filtering the canvas itself.
@@ -87,6 +94,29 @@ const Ink = (() => {
     return x0 === Infinity ? null : { x0, y0, x1, y1 };
   }
 
+  // (Re)builds the pen swatches at the start of a toolbar, e.g. after the palette changes in Settings.
+  function renderSwatches(bar) {
+    bar.querySelectorAll('[data-color]').forEach((b) => b.remove());
+    const first = bar.querySelector('.sep');
+    COLORS.forEach((c, index) => {
+      const b = document.createElement('button');
+      b.setAttribute('data-color', c);
+      b.setAttribute('style', `--c:${c}`);
+      if (LEGACY.has(c)) b.setAttribute('data-adaptive', '');
+      b.title = index === 0 ? 'Ink (follows the theme)' : 'Pen colour';
+      b.setAttribute('aria-label', index === 0 ? 'Ink pen' : `Pen colour ${c}`);
+      bar.insertBefore(b, first);
+    });
+  }
+  // `colors` holds the five pens: Ink first (empty = follow the theme), then four accents.
+  function setPalette(colors) {
+    const list = Array.isArray(colors) ? colors : [];
+    const valid = (c) => /^#[0-9a-f]{6}$/i.test(c || '');
+    COLORS = [valid(list[0]) ? list[0].toLowerCase() : INK, ...ACCENTS.map((fallback, i) => (valid(list[i + 1]) ? list[i + 1].toLowerCase() : fallback))];
+    document.querySelectorAll('.ink-tools').forEach(renderSwatches);
+    if (!COLORS.includes(tool.color)) { tool.color = COLORS[0]; saveTool(); }
+    syncToolbars();
+  }
   function syncToolbars() {
     document.querySelectorAll('.ink-tools').forEach((bar) => {
       bar.querySelectorAll('[data-color]').forEach((b) => b.classList.toggle('active', !tool.eraser && b.dataset.color === tool.color));
@@ -100,12 +130,11 @@ const Ink = (() => {
   // every finished stroke, erase, undo, clear or resize.
   const padWidth = (block) => Math.min(MAX_W, Math.max(300, Number(block.w) || UNIT));
 
-  // Width in units for a new pad: the room the note panel currently has.
+  // Width in units for a new pad: exactly the note column (the Note width setting decides how wide that is).
   function defaultWidth() {
     const stage = document.getElementById('notes-stage');
     const column = stage?.querySelector('.note-blocks')?.clientWidth || UNIT * PX_PER_UNIT;
-    const room = Math.min(1500, Math.max(column, (stage?.clientWidth || 0) - 2 * GUTTER));
-    return Math.max(UNIT, Math.min(MAX_W, Math.round(room / PX_PER_UNIT / 50) * 50));
+    return Math.max(UNIT, Math.min(MAX_W, Math.ceil(column / PX_PER_UNIT / 50) * 50));
   }
 
   function mount(el, block, onChange, history = null) {
@@ -123,23 +152,24 @@ const Ink = (() => {
       parent.append(node);
       return node;
     };
-    const toolbar = make('div', { class: 'ink-tools' });
-    for (const c of COLORS) make('button', { 'data-color': c, style: `--c:${c}`, title: 'Pen colour', 'aria-label': `Pen colour ${c}` }, toolbar);
+    const toolbar = make('div', { class: 'ink-tools', role: 'toolbar', 'aria-label': 'Drawing tools' });
     make('span', { class: 'sep' }, toolbar);
+    renderSwatches(toolbar);
+    // Each bar is drawn at the stroke's true on-screen thickness.
     for (const w of WIDTHS) {
       const button = make('button', { 'data-width': w, title: 'Pen width', 'aria-label': `Pen width ${w}` }, toolbar);
-      make('i', { style: `height:${Math.round(w * 1.3)}px` }, button);
+      make('i', { style: `height:${previewPx(w).toFixed(2)}px` }, button);
     }
     make('span', { class: 'sep' }, toolbar);
-    for (const [act, title, text] of [['eraser', 'Eraser', '⌫'], ['undo', 'Undo drawing', '↶'], ['redo', 'Redo drawing', '↷'], ['clear', 'Clear pad', 'Clear']]) {
-      make('button', { 'data-act': act, title, 'aria-label': title }, toolbar, text);
+    for (const [act, title, icon] of [['eraser', 'Eraser', 'eraser'], ['undo', 'Undo drawing', 'undo-2'], ['redo', 'Redo drawing', 'redo-2'], ['clear', 'Clear drawing', 'trash-2']]) {
+      const button = make('button', { 'data-act': act, title, 'aria-label': title, class: 'tool' }, toolbar);
+      button.append(NoctuaIcons.create(icon, 15));
     }
     const scroll = make('div', { class: 'ink-scroll' });
     const surfaceNode = make('div', { class: 'ink-surface' }, scroll);
     make('canvas', { 'aria-label': 'Drawing canvas' }, surfaceNode);
     make('canvas', { class: 'ink-live', 'aria-hidden': 'true' }, surfaceNode);
     make('div', { class: 'ink-edge left', title: 'Drag left to add room on the left' }, surfaceNode);
-    make('div', { class: 'ink-edge right', title: 'Drag to change the width' }, surfaceNode);
     make('div', { class: 'ink-resize', title: 'Drag to change the height' });
     const [canvas, live] = el.querySelectorAll('canvas');
     const scroller = el.querySelector('.ink-scroll'), surface = el.querySelector('.ink-surface');
@@ -147,14 +177,18 @@ const Ink = (() => {
     const undo = [], redo = [];
     let scale = PX_PER_UNIT, cur = null, erasing = false, erasedAny = false, paint = (c) => c, geometry = '';
 
-    // Wide pads extend past the text column (centered, up to the note panel's
-    // width) and scroll sideways inside themselves beyond that. Beside LaTeX,
-    // a pad keeps to its half of the row. Older 1000-unit pads shrink to fit a
-    // narrow column, as before.
+    // A pad is exactly as wide as its note column: narrower pads gain drawing room
+    // until they fill it, wider ones scroll sideways inside themselves. Beside LaTeX
+    // a pad keeps to its half of the row. Pads shrink (never grow) to fit a column
+    // narrower than 1000 units.
     function layout(force = false) {
-      const nb = el.closest('.nb'), stage = el.closest('#notes-stage');
+      const nb = el.closest('.nb');
       const column = (nb || el.parentElement)?.clientWidth || UNIT * PX_PER_UNIT;
-      const room = el.closest('.nb-pair') || !stage ? column : Math.max(column, stage.clientWidth - 2 * GUTTER);
+      const room = column;
+      if (column > 0) {
+        const base = Math.min(PX_PER_UNIT, column / Math.min(padWidth(block), UNIT));
+        if (padWidth(block) * base < column - 1) block.w = Math.min(MAX_W, Math.ceil(column / base / 50) * 50);
+      }
       const w = padWidth(block), dpr = window.devicePixelRatio || 1;
       const key = [column, room, w, block.h, dpr].join();
       if (key === geometry && !force) return;
@@ -191,7 +225,7 @@ const Ink = (() => {
     }
 
     function redraw() {
-      paint = getComputedStyle(el).getPropertyValue('--np-ink-filter').includes('invert') ? lightColor : (c) => c;
+      paint = getComputedStyle(el).getPropertyValue('--np-ink-filter').includes('invert') ? (c) => (LEGACY.has(c) ? lightColor(c) : c) : (c) => c;
       ctx.clearRect(0, 0, canvas.width, canvas.height);
       for (const s of block.strokes) drawStroke(ctx, s, scale, paint(s.c));
     }
@@ -324,16 +358,10 @@ const Ink = (() => {
         window.addEventListener('pointerup', up);
       });
     }
-    // The bottom edge sets the height; the right edge the width, never cutting
-    // off strokes. Dragging the left edge outward adds room on the left by
+    // The bottom edge sets the height; the pad's width follows the note column. Dragging the left edge outward adds room on the left by
     // shifting the drawing right (inward removes empty room there).
     drag(el.querySelector('.ink-resize'), (dx, dy, start) => {
       block.h = Math.min(MAX_H, Math.max(60 / scale, start.h * UNIT + dy / scale) / UNIT);
-      layout();
-    });
-    drag(el.querySelector('.ink-edge.right'), (dx, dy, start) => {
-      const used = bounds(block.strokes)?.x1 || 0;
-      block.w = Math.round(Math.min(MAX_W, Math.max(300, used + 20, start.w + dx / scale)));
       layout();
     });
     const leftEdge = el.querySelector('.ink-edge.left');
@@ -400,5 +428,5 @@ const Ink = (() => {
     return c.toDataURL('image/png');
   }
 
-  return { mount, tool, preview, refresh, defaultWidth };
+  return { mount, tool, preview, refresh, defaultWidth, setPalette };
 })();
