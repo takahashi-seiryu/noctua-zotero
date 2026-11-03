@@ -6,12 +6,16 @@ for the entire Noctua app. No Noctua server is required.
 
 ## Install and open
 
-Build with `python3 scripts/build.py`. In Zotero, choose **Tools → Plugins →
-gear → Install Plugin From File…** and select `dist/noctua-notes-0.5.6.xpi`.
+Download the latest `.xpi` from the
+[Releases page](https://github.com/takahashi-seiryu/noctua-zotero/releases/latest)
+and in Zotero choose **Tools → Plugins → gear → Install Plugin From File…**.
+Later versions install automatically through Zotero's update check
+(`update_url` points at the latest release's `updates.json`).
 The prototype targets Zotero 8–10; the local runtime check uses Zotero 10.0.7.
-Updates are manual for this draft. Zotero requires an `update_url`, so the
-manifest uses a reserved `.invalid` placeholder until a real release channel
-exists; it cannot supply automatic updates.
+
+To publish a release: bump `version` in `manifest.json` and `package.json`,
+commit and push, then run `scripts/release.sh`. It builds the XPI, writes
+`dist/updates.json` (with a SHA-256 hash), and creates the GitHub Release.
 
 Select a paper in **My Library** and choose **Tools → Open Noctua Notes…**, or use
 the paper's context menu. This opens that paper's first Noctua note or creates

@@ -27,7 +27,7 @@ test('remote revisions cannot silently overwrite another save', () => {
   assert.doesNotThrow(()=>model.assertRevision(doc,'remote-change'));
 });
 test('rejects executable or remote image sources, duplicate IDs and non-finite drawing input', () => {
-  for(const data of ['https://example.test/image.png','data:image/svg+xml;base64,PHN2Zz4=','javascript:alert(1)']) {
+  for(const data of ['https://example.test/image.png','data:image/svg+xml;base64,bm90IGFuIGltYWdl','javascript:alert(1)']) {
     const doc=model.blank('x');doc.blocks=[{id:'i',type:'image',data,caption:''}];
     assert.throws(()=>model.validate(doc));
   }
@@ -74,7 +74,7 @@ test('import rejects missing, unsafe or unsupported media instead of losing imag
   const original={version:1,id:'n',title:'Test',blocks:[]};
   const source=src=>({...original,blocks:[{id:'t',type:'text',src}]});
   assert.throws(()=>model.importSource(source('\\includegraphics{images/missing.png}'),{id:'new'}),/Missing image/);
-  for (const name of ['../secret.png','images/../../secret.png','https://example.test/a.png','images/figure.svg','/tmp/file.png']) {
+  for (const name of ['../secret.png','images/../../secret.png','https://example.test/a.png','/tmp/file.png']) {
     assert.throws(()=>model.mediaPaths(source(`\\includegraphics{${name}}`)),/Unsupported media path/);
   }
   assert.throws(()=>model.mediaPaths(source('\\includevideo{images/video.mp4}')),/Video/);
@@ -94,7 +94,7 @@ test('original import reports metadata omissions and validates layouts and media
   assert.throws(()=>model.importSource({...original,version:2},{id:'new'}),/version 1/);
   const doc=model.blank('d');doc.blocks[0].beside='yes';assert.throws(()=>model.validate(doc),/layout/);
   delete doc.blocks[0].beside;
-  doc.media={'images/a.png':'https://example.test/a.png'};assert.throws(()=>model.validate(doc),/raster media/);
+  doc.media={'images/a.png':'https://example.test/a.png'};assert.throws(()=>model.validate(doc),/image media/);
 });
 test('original legacy ink width and raster assets in media folder survive migration', () => {
   const original={version:1,id:'legacy',title:'Legacy note',blocks:[

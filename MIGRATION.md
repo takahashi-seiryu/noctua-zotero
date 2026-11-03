@@ -112,3 +112,10 @@ The item-pane list now shows a clean title (no repeated "Noctua Note — "
 prefix) clamped to two lines, with a quiet "modified" line beneath. Rows have no
 Open button: double-click (or Enter on a focused row) opens the note in its tab.
 Creation is a text-style "+ New note" button; an empty paper shows "No notes yet".
+
+## 0.6.0 Tables, SVG and YouTube
+
+- `tabular`/`tabularx`/`longtable` (alignment, `\hline`/booktabs rules, `\multicolumn`), `table` floats with numbered captions, and GitHub-style pipe tables render as real tables.
+- SVG images (pasted, dropped, `\includegraphics`, or imported from `images/`/`media/`) are stored as base64 and shown only through `<img>`, which cannot run scripts or load external files; stored data must decode to an `<svg>` document.
+- A YouTube link alone on a line shows an embedded player. Zotero's privileged editor page cannot host remote pages in an `<iframe>`, so the player is an unprivileged remote content `<browser>` (youtube-nocookie.com only, validated 11-character IDs). The editor CSP is unchanged (`frame-src 'none'`). While a block is being edited its player is replaced by a "Watch on YouTube" link and returns when editing ends.
+- Video files (`\includevideo`) remain unsupported.

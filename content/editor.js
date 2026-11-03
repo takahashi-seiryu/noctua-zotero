@@ -169,8 +169,33 @@ window.startNoctuaNotes = function (host) {
         if(b.type!=="text") return;
         const view=document.querySelector(`[data-block-id="${CSS.escape(b.id)}"] .nb-view`);
         if(view) {
-          view.innerHTML=views[i] || '<p class="empty">Start writing…</p>';
+          const html=views[i] || '<p class="empty">Start writing…</p>', writing=editing===b.id;
+          // Unchanged views keep their live players; a block being typed in shows
+          // a plain link instead and gets its player back when editing ends.
+          if(view._key===html+"|"+writing) return;
+          view._key=html+"|"+writing;
+          view.innerHTML=html;
           view.querySelectorAll("iframe,video,audio,object,embed,script").forEach(el=>el.remove());
+          if(!writing) view.querySelectorAll(".tex-youtube[data-yt-id]").forEach(box=>{
+            const id=box.dataset.ytId,start=Number(box.dataset.ytStart)||0;
+            if(!/^[\w-]{11}$/.test(id)||!Number.isSafeInteger(start))return;
+            const url="https://www.youtube-nocookie.com/embed/"+id+(start>0?"?start="+start:"");
+            // Remote pages must live in an unprivileged content <browser>; a plain
+            // <iframe> inside this chrome:// page stays blank.
+            let player;
+            if(document.createXULElement) {
+              player=document.createXULElement("browser");
+              player.setAttribute("type","content");player.setAttribute("remote","true");
+              player.setAttribute("maychangeremoteness","true");player.setAttribute("disablehistory","true");
+              player.setAttribute("disableglobalhistory","true");player.setAttribute("src",url);
+            } else {
+              player=document.createElement("iframe");player.src=url;
+              player.setAttribute("sandbox","allow-scripts allow-same-origin allow-presentation");
+              player.setAttribute("allow","encrypted-media; picture-in-picture; fullscreen");player.setAttribute("allowfullscreen","");
+            }
+            player.classList.add("yt-player");player.setAttribute("aria-label","YouTube video player");
+            box.prepend(player);
+          });
           view.querySelectorAll("[data-tex-label]").forEach(el=>{el.id="note-label-"+el.dataset.texLabel;});
         }
       });
@@ -304,7 +329,7 @@ window.startNoctuaNotes = function (host) {
             e.preventDefault();editing=null;el.classList.remove("editing");view.focus();
           }
         });
-        textarea.addEventListener("blur",()=>{el.classList.remove("editing");if(editing===b.id)editing=null;});
+        textarea.addEventListener("blur",()=>{el.classList.remove("editing");if(editing===b.id){editing=null;renderPreviews();}});
         const view=document.createElement("div");view.className="nb-view tex-view";view.tabIndex=0;
         view.setAttribute("aria-label","Rendered text block; activate to edit source");
         view.addEventListener("click",e=>{
@@ -331,7 +356,7 @@ window.startNoctuaNotes = function (host) {
   }
   async function addImages(files) {
     for(const file of files) {
-      if(!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new Error("Choose a PNG, JPEG, WebP or GIF image.");
+      if(!/^image\/(png|jpeg|webp|gif|svg\+xml)$/.test(file.type)) throw new Error("Choose a PNG, JPEG, WebP, GIF or SVG image.");
       if(file.size>8*1024*1024) throw new Error("Each image must be 8 MB or smaller in this prototype.");
       const data=await new Promise((resolve,reject)=>{
         const r=new FileReader();r.onload=()=>resolve(r.result);r.onerror=()=>reject(r.error);r.readAsDataURL(file);

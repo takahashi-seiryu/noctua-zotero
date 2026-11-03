@@ -384,6 +384,107 @@ const NoctuaLatex = (() => {
     return `<figure class="tex-figure"><div class="tex-fig-row${p.hfill ? ' spread' : ''}">${p.items.join('')}</div>${cap}</figure>`;
   }
 
+
+  // ------------------------------------------------------------ tables
+
+  // Splits tabular text into rows and cells at top level only: braces and $math$
+  // protect \\ and &, as do escaped \&.
+  function tableRows(body) {
+    const rows = [[]];
+    let cell = '', depth = 0, math = false;
+    const endCell = () => { rows[rows.length - 1].push(cell); cell = ''; };
+    for (let i = 0; i < body.length; i++) {
+      const c = body[i];
+      if (c === '\\') {
+        if (body[i + 1] === '\\' && depth === 0 && !math) {
+          endCell(); rows.push([]); i++;
+          const o = /^\s*\[[^\]]*\]/.exec(body.slice(i + 1));
+          if (o) i += o[0].length;
+          continue;
+        }
+        cell += c + (body[i + 1] ?? ''); i++; continue;
+      }
+      if (c === '{') depth++;
+      else if (c === '}') depth = Math.max(0, depth - 1);
+      else if (c === '$' && depth === 0) math = !math;
+      else if (c === '&' && depth === 0 && !math) { endCell(); continue; }
+      cell += c;
+    }
+    endCell();
+    return rows;
+  }
+
+  // Column spec like |l|c|r| or p{3cm}l -> ['left','center','right', ...].
+  function columnAligns(spec) {
+    const out = [];
+    for (let i = 0; i < spec.length; i++) {
+      const c = spec[i];
+      if (c === 'l' || c === 'c' || c === 'r') out.push({ l: 'left', c: 'center', r: 'right' }[c]);
+      else if ('pmbX'.includes(c)) { out.push('left'); if (spec[i + 1] === '{') i = group(spec, i + 1).end - 1; }
+      else if ((c === '@' || c === '!' || c === '>' || c === '<') && spec[i + 1] === '{') i = group(spec, i + 1).end - 1;
+    }
+    return out;
+  }
+
+  const RULE = /^\s*\\(hline|toprule|midrule|bottomrule|cline\s*\{[^}]*\})/;
+  function tabular(body, st) {
+    const spec = reqArg(body, 0);
+    const aligns = columnAligns(spec.text);
+    const rows = tableRows(body.slice(spec.end));
+    let html = '', bottom = false;
+    rows.forEach((cells, r) => {
+      let rule = false;
+      let first = cells[0] || '';
+      for (let m; (m = RULE.exec(first)); ) { rule = true; first = first.slice(m[0].length); }
+      cells = [first, ...cells.slice(1)];
+      const last = r === rows.length - 1;
+      if (last && cells.length === 1 && !cells[0].replace(/\\(?:hline|toprule|midrule|bottomrule)/g, '').trim()) { bottom = bottom || rule || /\\(hline|bottomrule)/.test(cells[0]); return; }
+      let col = 0, tds = '';
+      for (let cell of cells) {
+        cell = cell.trim();
+        let span = 1, align = aligns[col] || 'left';
+        const mc = /^\\multicolumn\s*(?=\{)/.exec(cell);
+        if (mc) {
+          const n = reqArg(cell, mc[0].length), sp = reqArg(cell, n.end), tx = reqArg(cell, sp.end);
+          span = Math.max(1, parseInt(n.text, 10) || 1);
+          align = columnAligns(sp.text)[0] || align;
+          cell = tx.text;
+        }
+        tds += `<td${span > 1 ? ` colspan="${span}"` : ''} style="text-align:${align}">${inline(cell.trim(), st)}</td>`;
+        col += span;
+      }
+      html += `<tr${rule ? ' class="rule"' : ''}>${tds}</tr>`;
+    });
+    return `<div class="tex-table-wrap"><table class="tex-table${bottom ? ' rule-bottom' : ''}"><tbody>${html}</tbody></table></div>`;
+  }
+
+  function tableFloat(body, st) {
+    const num = ++st.tab;
+    st.current = String(num);
+    let caption = null;
+    const at = body.search(/\\caption(?![A-Za-z])/);
+    if (at >= 0) {
+      const m = /^\\caption(?![A-Za-z])\s*/.exec(body.slice(at));
+      const a = reqArg(body, optArg(body, at + m[0].length).end);
+      caption = inline(a.text, st);
+      body = body.slice(0, at) + body.slice(a.end);
+    }
+    const inner = blocks(body.replace(/\\centering(?![A-Za-z])/g, ''), { ...st, firstPara: true }, st);
+    return `<figure class="tex-tablefloat">${caption == null ? '' : `<figcaption><span class="tex-fig-num">Table ${num}:</span> ${caption}</figcaption>`}${inner}</figure>`;
+  }
+
+  // GitHub-style pipe tables.
+  const PIPE_SEP = /^\s*\|?\s*:?-{2,}:?\s*(?:\|\s*:?-{2,}:?\s*)*\|?\s*$/;
+  function pipeCells(line) {
+    const t = line.trim().replace(/^\|/, '').replace(/(?<!\\)\|$/, '');
+    return t.split(/(?<!\\)\|/).map((c) => c.replace(/\\\|/g, '|').trim());
+  }
+  function pipeTable(lines, st) {
+    const aligns = pipeCells(lines[1]).map((c) => (c.startsWith(':') && c.endsWith(':') ? 'center' : c.endsWith(':') ? 'right' : 'left'));
+    const row = (line, tag) => `<tr>${pipeCells(line).map((c, k) => `<${tag} style="text-align:${aligns[k] || 'left'}">${inline(c, st)}</${tag}>`).join('')}</tr>`;
+    return `<div class="tex-table-wrap"><table class="tex-table md"><thead>${row(lines[0], 'th')}</thead><tbody>${lines.slice(2).map((l) => row(l, 'td')).join('')}</tbody></table></div>`;
+  }
+
   // ------------------------------------------------------------ block structure
 
   function heading(kind, star, title, st) {
@@ -441,6 +542,8 @@ const NoctuaLatex = (() => {
       return `<div class="tex-${base}">${base === 'abstract' ? '<div class="tex-abstract-head">Abstract</div>' : ''}${inner}</div>`;
     }
     if (base === 'figure') return figure(body, st);
+    if (base === 'tabular' || base === 'tabularx' || base === 'longtable') return tabular(body, st);
+    if (base === 'table') return tableFloat(body, st);
     if (base === 'verbatim') return `<pre class="tex-verbatim">${esc(body.replace(/^\n/, ''))}</pre>`;
     return `<div class="tex-env"><span class="tex-unknown">${esc(env)}</span>${blocks(body, { ...st, firstPara: true }, st)}</div>`;
   }
@@ -462,7 +565,9 @@ const NoctuaLatex = (() => {
     const parts = /^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/.exec(time);
     const seconds = /^\d+$/.test(time) ? Number(time) : parts ? Number(parts[1] || 0) * 3600 + Number(parts[2] || 0) * 60 + Number(parts[3] || 0) : 0;
     const start = Number.isSafeInteger(seconds) && seconds > 0 ? `?start=${seconds}` : '';
-    return `<div class="tex-youtube"><iframe src="https://www.youtube-nocookie.com/embed/${id}${start}" title="YouTube video player" loading="lazy" referrerpolicy="strict-origin-when-cross-origin" allow="encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe><a href="https://www.youtube.com/watch?v=${id}" target="_blank" rel="noopener noreferrer">Open on YouTube</a></div>`;
+    // The player itself is attached by the editor with DOM APIs: privileged documents
+    // strip <iframe> from innerHTML, and only validated IDs may become players.
+    return `<div class="tex-youtube" data-yt-id="${id}" data-yt-start="${seconds > 0 && start ? seconds : 0}"><a class="tex-yt-link" href="https://www.youtube.com/watch?v=${id}${seconds > 0 && start ? '&t=' + seconds : ''}" target="_blank" rel="noopener">▶ Watch on YouTube</a></div>`;
   }
 
   function blocks(s, st, root = null) {
@@ -481,7 +586,23 @@ const NoctuaLatex = (() => {
       if (i === 0 || s[i - 1] === '\n') {
         const end = s.indexOf('\n', i);
         const lineEnd = end < 0 ? s.length : end;
-        const player = youtubeEmbed(s.slice(i, lineEnd).trim());
+        const line = s.slice(i, lineEnd);
+        if (/^\s*\|.*\|\s*$/.test(line) && lineEnd < s.length) {
+          const next = s.slice(lineEnd + 1, (s.indexOf('\n', lineEnd + 1) + 1 || s.length + 1) - 1);
+          if (PIPE_SEP.test(next) && next.includes('-')) {
+            const lines = [line, next];
+            let k = lineEnd + 1 + next.length;
+            while (k < s.length) {
+              const e2 = s.indexOf('\n', k + 1), stop = e2 < 0 ? s.length : e2;
+              const l2 = s.slice(k + 1, stop);
+              if (!/^\s*\|.*\|\s*$/.test(l2)) break;
+              lines.push(l2); k = stop;
+            }
+            flush(); out += pipeTable(lines, st); i = k; noindent = true; st.firstPara = false;
+            continue;
+          }
+        }
+        const player = youtubeEmbed(line.trim());
         if (player) {
           flush(); out += player; i = lineEnd; noindent = true; st.firstPara = false;
           continue;
@@ -552,7 +673,7 @@ const NoctuaLatex = (() => {
       i++;
     }
     flush();
-    if (root) { root.eq = st.eq; root.thm = st.thm; root.fn = st.fn; root.fig = st.fig; root.img = st.img; root.current = st.current; }
+    if (root) { root.eq = st.eq; root.thm = st.thm; root.fn = st.fn; root.fig = st.fig; root.tab = st.tab; root.img = st.img; root.current = st.current; }
     return out;
   }
 
@@ -561,7 +682,7 @@ const NoctuaLatex = (() => {
     if (opts.preamble) extractMacros(stripComments(opts.preamble), macros);
     const cleaned = sources.map((s) => s == null ? null : extractMacros(stripComments(s), macros));
     const run = (dry, labels) => {
-      const st = { dry, labels, macros, opts, sec: [0, 0, 0], eq: 0, thm: 0, fn: 0, fig: 0, img: 0, current: '', firstPara: true, inList: false };
+      const st = { dry, labels, macros, opts, sec: [0, 0, 0], eq: 0, thm: 0, fn: 0, fig: 0, tab: 0, img: 0, current: '', firstPara: true, inList: false };
       return cleaned.map((s) => {
         if (s == null) { st.firstPara = true; return ''; }
         st.img = 0;

@@ -75,7 +75,7 @@ async function startup({id, version, rootURI}) {
         let binary="";
         for(let n=0;n<bytes.length;n+=32768) binary+=String.fromCharCode(...bytes.subarray(n,n+32768));
         const ext=relative.split(".").pop().toLowerCase();
-        media[relative]="data:image/"+({jpg:"jpeg",jpeg:"jpeg",png:"png",gif:"gif",webp:"webp"}[ext])+";base64,"+btoa(binary);
+        media[relative]="data:image/"+({jpg:"jpeg",jpeg:"jpeg",png:"png",gif:"gif",webp:"webp",svg:"svg+xml"}[ext])+";base64,"+btoa(binary);
       }
       const imported=this.model.importSource(text,{id:uuid(),media});
       return this.open({create:true,item,owner,imported});

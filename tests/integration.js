@@ -199,6 +199,17 @@
       const many=t.getBoundingClientRect().height;
       assert(many>one*1.8&&t.scrollHeight<=Math.ceil(many),"Long titles must wrap onto multiple lines: "+one+" -> "+many);
       t.value=original;t.dispatchEvent(new win.Event("input",{bubbles:true}));}
+    {const keep=added.value;
+      added.value="https://youtu.be/dQw4w9WgXcQ\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n\\begin{tabular}{|l|r|}\\hline x & y \\\\ \\hline\\end{tabular}";
+      added.dispatchEvent(new win.Event("input",{bubbles:true}));
+      const view=added.closest(".nb").querySelector(".nb-view");
+      const frame=view.querySelector(".tex-youtube .yt-player");
+      assert(frame&&frame.getAttribute("src").startsWith("https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ"),"YouTube player iframe was not kept by the editor");
+      assert(view.querySelectorAll("table.tex-table").length===2&&view.querySelectorAll("td").length>=4,"Pipe and LaTeX tables did not render");
+      await new Promise(resolve=>setTimeout(resolve,4000));
+      let loaded="unknown";try{loaded=String(frame.currentURI?.spec||frame.contentDocument?.URL||"none")+" tag="+frame.localName+" remote="+frame.getAttribute("remote");}catch(error){loaded="err: "+error.name;}
+      result.youtubeProbe={loaded,height:frame.getBoundingClientRect().height,width:frame.getBoundingClientRect().width};
+      added.value=keep;added.dispatchEvent(new win.Event("input",{bubbles:true}));}
     const handleCount=win.document.querySelectorAll(".nb-handle").length, total=win.NoctuaNotesEditor.getDocument().blocks.length;
     assert(handleCount===total&&!win.document.querySelector(".nb-tools"),"Each block needs one drag handle and no inline tool buttons");
     win.document.querySelectorAll(".nb-handle")[1].click();assert(win.document.querySelector(".ctx-menu"),"Clicking the handle did not open the block menu");win.document.querySelectorAll(".nb-handle")[1].dispatchEvent(new win.Event("contextmenu",{bubbles:true,cancelable:true}));

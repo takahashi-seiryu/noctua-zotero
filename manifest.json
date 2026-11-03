@@ -1,13 +1,13 @@
 {
   "manifest_version": 2,
   "name": "Noctua Notes",
-  "version": "0.5.6",
+  "version": "0.6.1",
   "description": "Noctua's LaTeX, handwriting and image notes inside Zotero, with editable sources synced as attachments.",
   "author": "Noctua contributors",
   "applications": {
     "zotero": {
       "id": "noctua-notes@noctua.app",
-      "update_url": "https://example.invalid/noctua-notes/updates.json",
+      "update_url": "https://github.com/takahashi-seiryu/noctua-zotero/releases/latest/download/updates.json",
       "strict_min_version": "8.0",
       "strict_max_version": "10.*"
     }

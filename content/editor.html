@@ -48,11 +48,12 @@
     <p>Just start typing. Click any text to edit its source; the rendered result appears right below. Press Escape or Cmd/Ctrl+Enter to finish.</p>
     <p>Write $inline math$, $$display math$$, \section{Headings}, \label{key} and \ref{key}. Shared \newcommand definitions go in the LaTeX preamble (⋯ menu). Brackets and dollar signs pair automatically; Cmd/Ctrl+B and Cmd/Ctrl+I toggle bold and italic.</p>
     <p>Hover between blocks to add text or a drawing at that spot. Cmd/Ctrl+Shift+D adds a drawing after the current block. Paste or drop an image to add it. A text block after a drawing can sit beside it.</p>
+    <p>Paste a YouTube link on its own line to embed the player (it loads from youtube-nocookie.com when the note is shown). Tables work as \begin{tabular}{lcr} … \end{tabular}, inside \begin{table} with \caption, or as | pipe | tables |. PNG, JPEG, WebP, GIF and SVG images can be pasted or dropped.</p>
     <p>Use Citation to pick an item from your Zotero library; citations link to the item and build a reference list.</p>
     <p>Everything saves automatically; the status at the top shows Saving and Saved. Cmd/Ctrl+S saves immediately. Import and export live in Zotero’s Tools menu and each item’s right-click menu.</p>
     <button id="close-help" type="button">Close</button>
   </dialog>
-  <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden="hidden" />
+  <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,image/svg+xml" hidden="hidden" />
   <script src="platform.js"></script>
   <script src="icons.js"></script>
   <script src="vendor/katex/katex.min.js"></script>
