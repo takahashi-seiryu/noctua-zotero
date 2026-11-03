@@ -1,0 +1,23 @@
+<vbox xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"
+      xmlns:html="http://www.w3.org/1999/xhtml"
+      id="noctua-notes-preferences">
+  <linkset>
+    <html:link rel="localization" href="noctua-notes.ftl"/>
+  </linkset>
+  <vbox class="main-section">
+    <groupbox aria-labelledby="noctua-notes-appearance-title">
+      <label><html:h2 id="noctua-notes-appearance-title" data-l10n-id="noctua-notes-appearance-title"/></label>
+      <hbox align="center">
+        <label control="noctua-notes-theme" data-l10n-id="noctua-notes-theme-label"/>
+        <menulist id="noctua-notes-theme" native="true" preference="extensions.noctua-notes.theme" aria-describedby="noctua-notes-theme-description">
+          <menupopup>
+            <menuitem value="light" data-l10n-id="noctua-notes-theme-light"/>
+            <menuitem value="dark" data-l10n-id="noctua-notes-theme-dark"/>
+            <menuitem value="system" data-l10n-id="noctua-notes-theme-system"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+      <description id="noctua-notes-theme-description" data-l10n-id="noctua-notes-theme-description"/>
+    </groupbox>
+  </vbox>
+</vbox>

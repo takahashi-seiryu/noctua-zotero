@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' chrome:; style-src 'self' chrome: 'unsafe-inline'; font-src 'self' chrome:; img-src data: blob:; connect-src 'none'; frame-src 'none'; base-uri 'none'" />
+  <title>Noctua Notes</title>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css" />
+  <link rel="stylesheet" href="editor.css" />
+</head>
+<body>
+  <header>
+    <div class="brand"><span class="brand-mark" role="img" aria-label="Noctua Notes">🦉</span><strong>Noctua Notes</strong><span class="prototype">Prototype 0.5</span></div>
+    <div class="actions"><span id="save-status" role="status" aria-live="polite">Loading…</span><div class="appearance-actions" role="group" aria-label="Appearance and settings">
+      <button id="theme-toggle" type="button" aria-label="Dark theme" aria-pressed="false" title="Switch to dark theme"><span data-theme-icon="light"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="16"
+  height="16"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <circle cx="12" cy="12" r="4" />
+  <path d="M12 2v2" />
+  <path d="M12 20v2" />
+  <path d="m4.93 4.93 1.41 1.41" />
+  <path d="m17.66 17.66 1.41 1.41" />
+  <path d="M2 12h2" />
+  <path d="M20 12h2" />
+  <path d="m6.34 17.66-1.41 1.41" />
+  <path d="m19.07 4.93-1.41 1.41" />
+</svg>
+</span><span data-theme-icon="dark" hidden="hidden"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="16"
+  height="16"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" />
+</svg>
+</span><span data-theme-label>Light</span></button>
+      <button id="open-settings" type="button" disabled="disabled"><svg aria-hidden="true" focusable="false"
+  xmlns="http://www.w3.org/2000/svg"
+  width="16"
+  height="16"
+  viewBox="0 0 24 24"
+  fill="none"
+  stroke="currentColor"
+  stroke-width="2"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+>
+  <path d="M9.671 4.136a2.34 2.34 0 0 1 4.659 0 2.34 2.34 0 0 0 3.319 1.915 2.34 2.34 0 0 1 2.33 4.033 2.34 2.34 0 0 0 0 3.831 2.34 2.34 0 0 1-2.33 4.033 2.34 2.34 0 0 0-3.319 1.915 2.34 2.34 0 0 1-4.659 0 2.34 2.34 0 0 0-3.32-1.915 2.34 2.34 0 0 1-2.33-4.033 2.34 2.34 0 0 0 0-3.831A2.34 2.34 0 0 1 6.35 6.051a2.34 2.34 0 0 0 3.319-1.915" />
+  <circle cx="12" cy="12" r="3" />
+</svg>
+<span>Settings</span></button>
+    </div></div>
+  </header>
+  <div id="message" role="status" aria-live="polite" hidden="hidden"></div>
+  <main id="notes-stage">
+    <div class="note-heading">
+      <input id="title" aria-label="Note title" placeholder="Untitled note" maxlength="500" />
+      <div class="metadata"><span id="parent-title"></span></div>
+    </div>
+    <details id="preamble-panel"><summary>LaTeX preamble</summary><textarea id="preamble" aria-label="LaTeX preamble" placeholder="\newcommand{\R}{\mathbb{R}}" spellcheck="false"></textarea></details>
+    <div class="history-bar" role="toolbar" aria-label="Note history"><button id="undo" disabled="disabled">Undo</button><button id="redo" disabled="disabled">Redo</button><button id="help">Guide</button></div>
+    <div class="insert-bar" aria-label="Add a note block">
+      <button id="add-text">+ Text / LaTeX</button>
+      <button id="add-ink">+ Drawing</button>
+      <button id="insert-citation">Insert citation</button>
+      <button id="add-image">+ Image</button>
+      <button id="reload">Reload saved version</button>
+    </div>
+    <div id="blocks" class="note-blocks"></div>
+    <div id="references"></div>
+    <footer>Editable source → Zotero attachment → your file-sync service. Changes save automatically to this device; Zotero sync transfers it between devices.</footer>
+  </main>
+  <dialog id="note-help" aria-labelledby="note-help-title">
+    <h2 id="note-help-title">Note guide</h2>
+    <p>The editor opens in a white light theme by default. Use Light / Dark at the top right to change the plugin theme for all open notes. Settings opens Noctua Notes preferences, where System follows your operating system appearance.</p>
+    <p>Click rendered text to edit its LaTeX source beside a live preview. Press Escape or Cmd/Ctrl+Enter to finish. Select text without entering the editor.</p>
+    <p>Use the insertion controls between blocks to add text or a drawing at that position. Cmd/Ctrl+Shift+D inserts a drawing after the focused block. A text block following a drawing can appear beside it or below it.</p>
+    <p>In LaTeX source, parentheses, brackets, braces and dollar signs pair automatically. Type a closing character to step over it. Select text and type an opener to wrap it; Cmd/Ctrl+B and Cmd/Ctrl+I toggle bold and italic.</p>
+    <p>Write $inline math$, $$display math$$, \section{Headings}, \label{key}, and \ref{key}. Shared \newcommand definitions belong in the preamble. Use Insert citation to choose a Zotero library item. Citations resolve to author and year, link to the item, and generate a reference list.</p>
+    <p>Undo and Redo restore text, title, preamble, blocks, and drawings during this editor session. History is bounded and is cleared when reloading the saved version. Drawings retain vector strokes; paste or drop raster images to add image blocks.</p>
+    <p>Changes save automatically; the status at the top shows progress and any conflict or error. Zotero handles file sync. Cmd/Ctrl+S flushes pending changes immediately. Use Zotero’s Tools menu or an item’s right-click menu to import source into a separate editor or export a portable backup of the current note. Resolve conflicts by exporting your draft from the menu and reloading the saved version.</p>
+    <button id="close-help">Close guide</button>
+  </dialog>
+  <input id="image-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden="hidden" />
+  <script src="platform.js"></script>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="noctua-latex.js"></script>
+  <script src="noctua-ink.js"></script>
+  <script src="editor.js"></script>
+</body>
+</html>
