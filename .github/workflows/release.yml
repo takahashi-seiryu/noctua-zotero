@@ -1,0 +1,82 @@
+name: Release
+
+# Publish a release from main, built on GitHub's servers.
+#  - Actions → Release → Run workflow: bumps the latest release (patch by default) and tags main.
+#  - Or push a tag `vX.Y.Z` that points at a commit on main.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version bump from the latest release
+        type: choice
+        options: [patch, minor, major]
+        default: patch
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Only the repository owner can publish, even if collaborators are added later.
+    if: github.actor == github.repository_owner
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Check the commit is on main
+        run: |
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "Releases must come from a commit on main"; exit 1; }
+
+      - name: Work out the version
+        id: v
+        env:
+          BUMP: ${{ inputs.bump }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+          else
+            LAST=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -1)
+            IFS=. read -r MA MI PA <<< "${LAST#v}"
+            MA=${MA:-0}; MI=${MI:-0}; PA=${PA:-0}
+            case "$BUMP" in
+              major) VERSION="$((MA+1)).0.0" ;;
+              minor) VERSION="$MA.$((MI+1)).0" ;;
+              *) VERSION="$MA.$MI.$((PA+1))" ;;
+            esac
+          fi
+          if [ "$GITHUB_REF_TYPE" != tag ] && git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+            echo "v$VERSION already exists"; exit 1
+          fi
+          echo "Releasing v$VERSION"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp the version into the build
+        env:
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          node -e '
+            const fs = require("fs"), v = process.env.VERSION;
+            for (const f of ["manifest.json", "package.json"]) {
+              const j = JSON.parse(fs.readFileSync(f, "utf8")); j.version = v;
+              fs.writeFileSync(f, JSON.stringify(j, null, 2) + "\n");
+            }'
+
+      - run: npm test
+      - run: python3 scripts/build.py
+      - run: python3 scripts/updates.py
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.v.outputs.version }}
+        run: |
+          gh release create "v$VERSION" "dist/noctua-notes-$VERSION.xpi" dist/updates.json \
+            --title "v$VERSION" --generate-notes --target "$GITHUB_SHA"
