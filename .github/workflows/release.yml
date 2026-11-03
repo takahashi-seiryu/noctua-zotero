@@ -19,6 +19,8 @@ permissions:
 
 jobs:
   release:
+    # Only the repository owner can publish, even if collaborators are added later.
+    if: github.actor == github.repository_owner
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
