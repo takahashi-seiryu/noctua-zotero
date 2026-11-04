@@ -22,6 +22,14 @@ The assistant needs the [Claude](https://docs.claude.com/en/docs/claude-code) or
   (headings, lists, quotes, code, bold/italic). Drawings are pressure-sensitive vector ink; images (PNG/JPEG/WebP/GIF/SVG),
   tables and YouTube links work too. Press **Guide** in the editor for shortcuts and syntax.
 - **Save**: automatic; the top bar shows the status and last-saved time. `Cmd/Ctrl+S` flushes at once.
+- **Split view**: the columns button left of the assistant button puts a PDF reader beside the note. **⌘\\** (Ctrl+\\) toggles it. A note under a paper
+  opens that paper (pick one if it has several PDFs); a standalone note opens a library picker. Use the title bar above the PDF
+  to switch to any paper in your library, and drag the divider to resize.
+- **Filtering**: every Noctua note is tagged `noctua` (existing notes are tagged on startup). Click the tag in Zotero's tag selector, or make a saved search for `Tag is noctua`.
+- **Text settings** (Settings → Noctua Notes): note font, text size (the references use it too), title size, line spacing and note width.
+  Paragraph and block gaps follow the line spacing.
+- **Reading mode**: the eye button (or ⌘E / Ctrl+E) makes the note read-only and hides the editing controls; press it again to edit.
+  Clicking a citation shows the cited paper's PDF in the split view, or jumps to its entry in the reference list when it has no PDF.
 - **Assistant**: the note editor has a Claude/Codex chat that edits the note and can read the paper as reference.
   In the PDF reader, the **✨ Noctua Chat** button (below Zotero's yellow Notes button) opens a read-only chat about the
   paper: full text with page markers, metadata and your highlights. Model, reasoning level, Codex Fast mode, attachments,

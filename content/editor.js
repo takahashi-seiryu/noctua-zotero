@@ -165,6 +165,7 @@ window.startNoctuaNotes = function (host) {
   let baseRevision = doc.revision;
   let dirty = !!host.imported, generation = 0, saving = null, timer, draftTimer, conflict = false, closing = false;
   const pads = new Map();
+  let reading = false;
   let focusBlock = null, editing = null, historyGroup = null, historyTime = 0;
   const undo = [], redo = [];
   const contentSnapshot = () => JSON.stringify({title:doc.title,preamble:doc.preamble,blocks:doc.blocks});
@@ -174,7 +175,7 @@ window.startNoctuaNotes = function (host) {
   function restoreHistory(forward=false) {
     pads.forEach(p=>p.finish());
     const from=forward ? redo : undo, to=forward ? undo : redo;
-    if(!from.length)return;
+    if(reading||!from.length)return;
     to.push(contentSnapshot());
     Object.assign(doc,JSON.parse(from.pop()));
     document.title="Noctua Notes — "+doc.title;host.onTitle?.(doc.title);
@@ -309,6 +310,7 @@ window.startNoctuaNotes = function (host) {
     } catch(error) {message("Preview: "+error.message,true);}
   }
   function insert(type, image=null, index=doc.blocks.length) {
+    if(reading)return null;
     pads.forEach(p=>p.finish());
     const b=type==="text" ? {id:uid(),type,src:""}
       : type==="ink" ? {id:uid(),type,w:Ink.defaultWidth(),h:.6,strokes:[]}
@@ -320,6 +322,7 @@ window.startNoctuaNotes = function (host) {
     return b;
   }
   function edit(id, caret=null) {
+    if(reading)return;
     const block=document.querySelector(`[data-block-id="${CSS.escape(id)}"]`);
     if(editing && editing!==id) document.querySelector(`[data-block-id="${CSS.escape(editing)}"]`)?.classList.remove("editing");
     editing=id;focusBlock=id;
@@ -486,7 +489,7 @@ window.startNoctuaNotes = function (host) {
         wrap.append(textarea,view);el.append(wrap);
       } else if(b.type==="image") {
         const image=document.createElement("img");image.src=b.data;image.alt=b.caption || "Note image";
-        const caption=document.createElement("input");caption.value=b.caption;caption.placeholder="Image caption";
+        const caption=document.createElement("input");caption.value=b.caption;caption.placeholder="Image caption";caption.readOnly=reading;
         caption.setAttribute("aria-label","Image caption");caption.addEventListener("input",()=>{b.caption=caption.value;image.alt=b.caption;change();});
         el.append(image,caption);
       } else {
@@ -522,6 +525,14 @@ window.startNoctuaNotes = function (host) {
     render();message("");status("Loaded saved source");
   }
   $("parent-title").textContent=host.parentTitle;
+  if(host.split?.openParent && session.parentID) {
+    const link=$("parent-title");
+    link.classList.add("parent-link");link.tabIndex=0;link.setAttribute("role","link");
+    link.title="Show this paper's PDF in the split view";
+    const go=()=>Promise.resolve(host.split.openParent()).catch(report);
+    link.addEventListener("click",go);
+    link.addEventListener("keydown",e=>{if(e.key==="Enter"||e.key===" "){e.preventDefault();go();}});
+  }
   $("blocks").addEventListener("dragover",e=>{
     if(!dragId)return;
     const target=e.target.closest?.(".nb");
@@ -544,7 +555,19 @@ window.startNoctuaNotes = function (host) {
   window.addEventListener("blur",closeMenu);
   $("notes-stage").addEventListener("click",e=>{
     const citation=e.target.closest("[data-noctua-cite]");
-    if(citation) {e.preventDefault();e.stopPropagation();Promise.resolve(host.openCitation?.(citation.dataset.noctuaCite)).catch(report);return;}
+    if(citation) {
+      e.preventDefault();e.stopPropagation();
+      const key=citation.dataset.noctuaCite;
+      // A cited paper with a PDF opens in the split view; otherwise show its entry in the reference list.
+      Promise.resolve(host.openCitation?.(key)).then(opened=>{
+        if(opened)return;
+        const entry=[...$("references").querySelectorAll("[data-ref-key]")].find(el=>el.dataset.refKey===key);
+        if(!entry)return;
+        entry.scrollIntoView({block:"center",behavior:"smooth"});
+        entry.classList.remove("tex-flash");void entry.offsetWidth;entry.classList.add("tex-flash");setTimeout(()=>entry.classList.remove("tex-flash"),1600);
+      }).catch(report);
+      return;
+    }
     const anchor=e.target.closest("a[href]");
     if(!anchor)return;
     e.preventDefault();e.stopPropagation();
@@ -603,6 +626,8 @@ window.startNoctuaNotes = function (host) {
     if(e.defaultPrevented || !(e.metaKey||e.ctrlKey))return;
     const key=e.key.toLowerCase();
     if(key==="s"){e.preventDefault();save().catch(report);}
+    if(key==="\\"&&!e.shiftKey&&!e.altKey&&!splitButton.hidden){e.preventDefault();splitButton.click();}
+    if(key==="e"&&!e.shiftKey&&!e.altKey){e.preventDefault();setReading(!reading);}
     if(key==="d"&&e.shiftKey) {
       e.preventDefault();const i=doc.blocks.findIndex(b=>b.id===focusBlock);
       insert("ink",null,i<0?doc.blocks.length:i+1);
@@ -638,6 +663,7 @@ window.startNoctuaNotes = function (host) {
     bar.append(recover);$("message").after(bar);
   }
   function applyProposal(proposal, stamp) {
+    if(reading){message("Switch to editing mode to apply the assistant's proposal.");return false;}
     if(stamp!==contentSnapshot() && !window.confirm("The note changed while the assistant was working. Apply its proposal anyway? Undo restores your current version."))return false;
     pads.forEach(p=>p.finish());
     doc.title=proposal.title;doc.preamble=proposal.preamble;doc.blocks=clone(proposal.blocks);
@@ -646,9 +672,38 @@ window.startNoctuaNotes = function (host) {
     if(doc.preamble.trim()){$("preamble-panel").hidden=false;$("preamble-panel").open=true;}
     return true;
   }
+  // Reading mode: the note can be scrolled, selected and cited from, but nothing can be changed by accident.
+  const modeButton=$("mode-toggle");
+  function setReading(on,persist=true) {
+    pads.forEach(p=>p.finish());
+    reading=!!on;editing=null;
+    document.body.classList.toggle("reading",reading);
+    $("title").readOnly=reading;$("preamble").readOnly=reading;
+    modeButton.setAttribute("aria-pressed",String(reading));
+    modeButton.title=reading?"Reading mode is on. Click to edit (⌘E)":"Switch to reading mode (⌘E)";
+    // Update in place: rebuilding every block would reset the scroll position and make the page jump.
+    const scroller=document.scrollingElement,y=scroller.scrollTop;
+    document.querySelectorAll(".nb.editing").forEach(el=>el.classList.remove("editing"));
+    document.querySelectorAll(".nb-image input").forEach(input=>{input.readOnly=reading;});
+    if(reading)document.activeElement?.blur?.();
+    renderPreviews();
+    scroller.scrollTop=y;
+    if(persist)store.set("editor.reading",reading?"1":"0");
+  }
+  modeButton.addEventListener("click",()=>setReading(!reading));
+  const splitButton=$("split-toggle");
+  if(host.split && splitButton) {
+    splitButton.hidden=false;
+    const mark=open=>{splitButton.setAttribute("aria-pressed",String(!!open));splitButton.title=open?"Close split view (⌘\\)":"Split view: read a paper beside this note (⌘\\)";};
+    host.split.onChange=mark;
+    splitButton.addEventListener("click",()=>{Promise.resolve(host.split.toggle()).then(mark).catch(report);});
+  }
   NoctuaChat.mount({host,document,window,store,report,apply:applyProposal,
     snapshot:()=>{pads.forEach(p=>p.finish());return {doc:clone(doc),stamp:contentSnapshot()};}});
-  render();updateHistory();document.title="Noctua Notes — "+doc.title;
+  render();
+  // A brand-new note opens for writing whatever mode was last used; saved notes open in the remembered mode.
+  if(session.item&&store.get("editor.reading")==="1")setReading(true,false);
+  updateHistory();document.title="Noctua Notes — "+doc.title;
   status(session.item ? "Saved" : "New note");
   if(!session.item && !host.draft && doc.blocks.length===1 && doc.blocks[0].type==="text" && !doc.blocks[0].src) {
     $("title").focus();

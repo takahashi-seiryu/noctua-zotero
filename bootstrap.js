@@ -15,6 +15,7 @@ async function startup({id, version, rootURI}) {
   Services.scriptloader.loadSubScript(rootURI + "lib/activation.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/pane.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/readerchat.js", scope);
+  Services.scriptloader.loadSubScript(rootURI + "lib/splitview.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/settings.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/agent.js", scope);
   Services.scriptloader.loadSubScript(rootURI + "lib/phonecam.js", scope);
@@ -282,6 +283,7 @@ async function startup({id, version, rootURI}) {
             const entry=this.tabs.get(tab.id);
             if (!entry) return;
             this.flushEntry(entry).catch(error=>Zotero.logError(error));
+            try { splitView?.destroy(); } catch (error) { Zotero.logError(error); }
             this.agent.cleanup(session.id).catch(error=>Zotero.logError(error));
             this.tabs.delete(tab.id);
           }});
@@ -297,7 +299,29 @@ async function startup({id, version, rootURI}) {
         // The note assistant may read the paper's PDF too (a setting; off keeps the text on this computer).
         const readsPaper = !!parent?.isRegularItem?.() && Zotero.Prefs.get("extensions.noctua-notes.agent.notePaper", true) !== false
           && parent.getAttachments().some(id => { const a = Zotero.Items.get(id); return a && !a.deleted && a.isPDFAttachment(); });
-        const args = {session, doc, draft, storage, model:scope.NoctuaNotesModel, references, imported:!!imported, hasPaper:readsPaper,
+        // Split view: the paper's PDF (or any library PDF) beside the note. Built on first use.
+        let splitView = null;
+        const ensureSplit = () => splitView ||= scope.NoctuaSplitView.create({Zotero, owner, tabID:tab.id, container:tab.container, frame, parent,
+          libraryID, store:this.uiState, noteID:session.id, onChange:open => { try { split.onChange?.(open); } catch (error) { Zotero.logError(error); } }});
+        const split = {
+          onChange: null,
+          toggle: () => ensureSplit().toggle(),
+          // Show a cited paper's PDF beside the note. False when it has none (the editor then points at the reference list).
+          showItem: async item => {
+            const pdf = scope.NoctuaSplitView.pdfsOf(Zotero, item)[0];
+            if (!pdf) return false;
+            await ensureSplit().showItem(pdf);
+            return true;
+          },
+          // The paper the note belongs to: its PDF in the split view, or the item in the library without one.
+          openParent: async () => {
+            if (!parent || await ensureSplit().showPaper()) return;
+            await owner.ZoteroPane.selectItem(parent.id);
+          },
+          isOpen: () => !!splitView?.isOpen
+        };
+        entry.split = split;
+        const args = {session, doc, draft, split, storage, model:scope.NoctuaNotesModel, references, imported:!!imported, hasPaper:readsPaper,
           appearance:this.appearance, ui:this.uiState,
           agent:{
             providers:() => this.agent.providers(),
@@ -314,7 +338,7 @@ async function startup({id, version, rootURI}) {
           importSource:()=>this.importSource({owner,item:parent}),
           async openCitation(key) {
             const cited=Zotero.Items.getByLibraryAndKey(libraryID,key);
-            if(cited && !cited.deleted) await owner.ZoteroPane.selectItem(cited.id);
+            return !!cited && !cited.deleted && await split.showItem(cited);
           },
           parentTitle:parent?.getField("title") || "My Library",
           exportSource:(document, editorWindow) => this.writeExport(document, editorWindow),
@@ -344,6 +368,8 @@ async function startup({id, version, rootURI}) {
           if (win?.startNoctuaNotes) {
             entry.editorWindow=win;
             win.startNoctuaNotes(args);
+            // Keyboard shortcuts (⌘E, ⌘S, ⇧⌘K…) only reach the editor once it has focus; a new tab leaves it on the tab strip.
+            try { win.focus(); } catch (_) {}
             if(imported) {
               await win.NoctuaNotesEditor.save();
               if(imported.warnings.length) win.document.getElementById("message").textContent=imported.warnings.join("\n");
@@ -410,7 +436,7 @@ async function startup({id, version, rootURI}) {
       repaint();
     };
   }
-  Promise.resolve().then(() => storage.stripTitlePrefix?.()).catch(error => Zotero.logError(error));
+  Promise.resolve().then(() => storage.stripTitlePrefix?.()).then(() => storage.tagExisting?.()).catch(error => Zotero.logError(error));
   for (const window of Zotero.getMainWindows()) NoctuaNotes.loadLocalization(window);
   for (const [target, menuID, l10nID, create, standalone] of [
     ["main/library/item", "noctua-notes-item", "noctua-notes-open", false, false],

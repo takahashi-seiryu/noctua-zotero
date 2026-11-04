@@ -6,19 +6,19 @@ const vm=require("node:vm");
 const settings=require("../lib/settings.js");
 
 async function fixture(value, failPane=false) {
-  let observer, previewObserver, previewValue="right", inkValues={}, inkObservers=[], widthValue=undefined, registration, removed=0, unregistered=0;
+  let observer, previewObserver, previewValue="right", inkValues={}, inkObservers=[], widthValue=undefined, fontValues={}, registration, removed=0, unregistered=0;
   const writes=[],opened=[],errors=[];
   const Zotero={
-    Prefs:{get(key,global){assert.equal(global,true);if(key===settings.WIDTH_PREF)return widthValue;if(settings.INK_PREFS.includes(key))return inkValues[key];return key===settings.PREVIEW_PREF?previewValue:(assert.equal(key,settings.THEME_PREF),value);},
+    Prefs:{get(key,global){assert.equal(global,true);if(key===settings.WIDTH_PREF)return widthValue;if([settings.FONT_PREF,settings.FONT_SIZE_PREF,settings.TITLE_SIZE_PREF,settings.LINE_PREF].includes(key))return fontValues[key];if(settings.INK_PREFS.includes(key))return inkValues[key];return key===settings.PREVIEW_PREF?previewValue:(assert.equal(key,settings.THEME_PREF),value);},
       set(key,next,global){assert.equal(key,settings.THEME_PREF);assert.equal(global,true);value=next;writes.push(next);observer?.();},
-      registerObserver(key,fn,global){assert.equal(global,true);if(key===settings.PREVIEW_PREF){previewObserver=fn;return 18;}if(settings.INK_PREFS.includes(key)||key===settings.WIDTH_PREF){inkObservers.push(fn);return 19;}assert.equal(key,settings.THEME_PREF);observer=fn;return 17;},
+      registerObserver(key,fn,global){assert.equal(global,true);if(key===settings.PREVIEW_PREF){previewObserver=fn;return 18;}if(settings.INK_PREFS.includes(key)||key===settings.WIDTH_PREF||[settings.FONT_PREF,settings.FONT_SIZE_PREF,settings.TITLE_SIZE_PREF,settings.LINE_PREF].includes(key)){inkObservers.push(fn);return 19;}assert.equal(key,settings.THEME_PREF);observer=fn;return 17;},
       unregisterObserver(token){if(token===19){inkObservers.pop();return;}if(token===18){previewObserver=null;return;}assert.equal(token,17);observer=null;removed++;}},
     PreferencePanes:{async register(options){registration=options;if(failPane)throw Error("Registration failed");return options.id;},
       unregister(id){assert.equal(id,settings.PANE_ID);unregistered++;}},
     Utilities:{Internal:{openPreferences:id=>opened.push(id)}},logError:error=>errors.push(error)
   };
   const service=await settings.create({Zotero,pluginID:"noctua@test",rootURI:"file:///plugin/"}).catch(error=>error);
-  return {service,Zotero,writes,opened,errors,get registration(){return registration;},get removed(){return removed;},get unregistered(){return unregistered;},external(next){value=next;observer?.();},externalPreview(next){previewValue=next;previewObserver?.();},setWidth(next){widthValue=next;inkObservers.forEach(fn=>fn());},setInk(key,next){inkValues[key]=next;inkObservers.forEach(fn=>fn());}};
+  return {service,Zotero,writes,opened,errors,get registration(){return registration;},get removed(){return removed;},get unregistered(){return unregistered;},external(next){value=next;observer?.();},externalPreview(next){previewValue=next;previewObserver?.();},setWidth(next){widthValue=next;inkObservers.forEach(fn=>fn());},setFont(key,next){fontValues[key]=next;inkObservers.forEach(fn=>fn());},setInk(key,next){inkValues[key]=next;inkObservers.forEach(fn=>fn());}};
 }
 test("missing and invalid preferences use light; system requires an explicit selection",async()=>{
   for(const value of [undefined,null,"",false,1,"auto","DARK","system "]) {
@@ -58,9 +58,9 @@ test("native XHTML controls bind directly to the persistent plugin preference",(
 p=E.parse('content/preferences.xhtml').getroot()
 n={'x':'http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul'}
 assert p.attrib['id']=='noctua-notes-preferences'
-assert [e.attrib['value'] for e in p.findall('.//x:menuitem',n)]==['light','dark','system','right','below']
+assert [e.attrib['value'] for e in p.findall('.//x:menuitem',n)]==['light','dark','system','times','georgia','palatino','sans','right','below']
 assert p.find('.//x:label[@control="noctua-notes-theme"]',n) is not None
-assert [m.attrib['preference'] for m in p.findall('.//x:menulist',n)]==['extensions.noctua-notes.theme','extensions.noctua-notes.previewPosition']
+assert [m.attrib['preference'] for m in p.findall('.//x:menulist',n)]==['extensions.noctua-notes.theme','extensions.noctua-notes.fontFamily','extensions.noctua-notes.previewPosition']
 `],{cwd:require("node:path").join(__dirname,".."),encoding:"utf8"});
   assert.equal(result.status,0,result.stderr);
 });
@@ -170,4 +170,36 @@ test("the pane script keeps the note-width value label in step with the slider",
   vm.runInNewContext(script,{document,window:{addEventListener(){}},setTimeout(){},Zotero:{Prefs:{set(){}}}});
   assert.equal(label.value,"60%");
   slider.value="75";slider.listeners.input();assert.equal(label.value,"75%");
+});
+
+test("note font and text size have safe defaults and are validated",async()=>{
+  const f=await fixture("light"),a=f.service.appearance;
+  assert.equal(a.getFontFamily(),"times");assert.equal(a.getFontSize(),18);
+  const prefs=fs.readFileSync(require.resolve("../prefs.js"),"utf8");
+  for(const [input,expected] of [["georgia","georgia"],["comic","times"],[null,"times"]]){f.setFont(settings.FONT_PREF,input);assert.equal(a.getFontFamily(),expected,String(input));}
+  for(const [input,expected] of [[20,20],[5,12],[99,28],[17.6,18],["x",18]]){f.setFont(settings.FONT_SIZE_PREF,input);assert.equal(a.getFontSize(),expected,String(input));}
+  assert.equal(a.getTitleSize(),38);assert.equal(a.getLineSpacing(),175);
+  for(const [input,expected] of [[40,40],[10,24],[200,64],["x",38]]){f.setFont(settings.TITLE_SIZE_PREF,input);assert.equal(a.getTitleSize(),expected,String(input));}
+  for(const [input,expected] of [[150,150],[152,150],[10,120],[999,260],["x",175],[null,175]]){f.setFont(settings.LINE_PREF,input);assert.equal(a.getLineSpacing(),expected,String(input));}
+  assert.match(prefs,/titleSize", 38/);assert.match(prefs,/lineSpacing", 175/);
+  assert.match(prefs,/fontFamily", "times"/);assert.match(prefs,/fontSize", 18/);
+  f.service.destroy();
+});
+
+test("choosing a font applies that font's suggested sizes, matching the settings module",()=>{
+  const script=fs.readFileSync(require.resolve("../content/preferences.js"),"utf8");
+  for(const font of settings.FONTS){
+    const sets={},els={},handlers={};
+    const el=(id,extra={})=>els[id]={id,dataset:{},value:"",listeners:{},addEventListener(type,fn){this.listeners[type]=fn;},dispatchEvent(){},...extra};
+    ["noctua-notes-font-size","noctua-notes-title-size","noctua-notes-line"].forEach(id=>el(id));
+    el("noctua-notes-font",{value:font});
+    const document={getElementById:id=>els[id]||null,addEventListener(){}};
+    vm.runInNewContext(script,{document,window:{addEventListener(){}},setTimeout(){},Event:class{},Zotero:{Prefs:{set(key,value,global){assert.equal(global,true);sets[key]=value;}}}});
+    els["noctua-notes-font"].listeners.command();
+    const profile=settings.FONT_PROFILES[font];
+    assert.ok(profile,font);
+    for(const [name,value] of Object.entries(profile))assert.equal(sets["extensions.noctua-notes."+name],value,font+" "+name);
+  }
+  const defaults=fs.readFileSync(require.resolve("../prefs.js"),"utf8"),times=settings.FONT_PROFILES.times;
+  assert.match(defaults,new RegExp(`fontSize", ${times.fontSize}\\)`));assert.match(defaults,new RegExp(`titleSize", ${times.titleSize}\\)`));assert.match(defaults,new RegExp(`lineSpacing", ${times.lineSpacing}\\)`));
 });

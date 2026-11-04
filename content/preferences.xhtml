@@ -24,6 +24,32 @@
         <label id="noctua-notes-width-value" style="min-width: 3.5em"/>
       </hbox>
       <hbox align="center">
+        <label control="noctua-notes-font" data-l10n-id="noctua-notes-font-label"/>
+        <menulist id="noctua-notes-font" native="true" preference="extensions.noctua-notes.fontFamily">
+          <menupopup>
+            <menuitem value="times" data-l10n-id="noctua-notes-font-times"/>
+            <menuitem value="georgia" data-l10n-id="noctua-notes-font-georgia"/>
+            <menuitem value="palatino" data-l10n-id="noctua-notes-font-palatino"/>
+            <menuitem value="sans" data-l10n-id="noctua-notes-font-sans"/>
+          </menupopup>
+        </menulist>
+      </hbox>
+      <hbox align="center">
+        <label control="noctua-notes-font-size" data-l10n-id="noctua-notes-font-size-label"/>
+        <html:input id="noctua-notes-font-size" type="range" min="12" max="28" step="1" preference="extensions.noctua-notes.fontSize" aria-describedby="noctua-notes-font-size-value"/>
+        <label id="noctua-notes-font-size-value" style="min-width: 3.5em"/>
+      </hbox>
+      <hbox align="center">
+        <label control="noctua-notes-title-size" data-l10n-id="noctua-notes-title-size-label"/>
+        <html:input id="noctua-notes-title-size" type="range" min="24" max="64" step="1" preference="extensions.noctua-notes.titleSize" aria-describedby="noctua-notes-title-size-value"/>
+        <label id="noctua-notes-title-size-value" style="min-width: 3.5em"/>
+      </hbox>
+      <hbox align="center">
+        <label control="noctua-notes-line" data-l10n-id="noctua-notes-line-label"/>
+        <html:input id="noctua-notes-line" type="range" min="120" max="260" step="5" preference="extensions.noctua-notes.lineSpacing" aria-describedby="noctua-notes-line-value"/>
+        <label id="noctua-notes-line-value" style="min-width: 3.5em"/>
+      </hbox>
+      <hbox align="center">
         <label control="noctua-notes-preview" data-l10n-id="noctua-notes-preview-label"/>
         <menulist id="noctua-notes-preview" native="true" preference="extensions.noctua-notes.previewPosition">
           <menupopup>

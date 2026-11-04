@@ -75,7 +75,7 @@ test("every icon used by the editor exists in the bundled Lucide set and the fir
   for(const name of used)assert.ok(ctx.icons.data[name],"missing icon "+name);
   const header=html.slice(html.indexOf("<header>"),html.indexOf("</header>"));
   const visible=header.replace(/<div id="more-menu"[\s\S]*?<\/div>/,"");
-  assert.equal((visible.match(/<button/g)||[]).length,5,"header should show only assistant, undo, redo, theme and the menu trigger");
+  assert.equal((visible.match(/<button/g)||[]).length,7,"header should show only reading mode, split view, assistant, undo, redo, theme and the menu trigger");
 });
 
 test("the header's last-saved time reads naturally and is empty for unsaved notes",()=>{
