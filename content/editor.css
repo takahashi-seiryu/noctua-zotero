@@ -19,6 +19,7 @@ header{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-
 .brand-name{font:600 13px var(--font-ui);color:var(--np-muted);letter-spacing:.02em}
 .icon-btn{display:inline-flex;align-items:center;justify-content:center;width:30px;padding:0;border-color:transparent;background:transparent;color:var(--np-muted)}
 .icon-btn:hover:not(:disabled){background:var(--np-raise);color:var(--np-ink)}
+#mode-toggle[aria-pressed="true"],#split-toggle[aria-pressed="true"]{background:var(--np-line);color:var(--np-ink)}
 #save-status{font-size:12px;color:var(--np-muted);margin-right:8px;line-height:1.4;max-width:240px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #save-status.error{color:var(--np-warn)}
 .save-time{font-size:12px;color:var(--np-muted);line-height:1.4;white-space:nowrap}
@@ -28,11 +29,16 @@ header{position:sticky;top:0;z-index:10;display:flex;align-items:center;justify-
 #more-menu button{display:flex;align-items:center;gap:10px;text-align:left;border:0;background:transparent;padding:7px 10px;border-radius:6px;color:var(--np-ink)}
 #more-menu button:hover:not(:disabled),#more-menu button:focus-visible{background:var(--np-raise)}
 #more-menu button:focus-visible{outline:none}
-main{width:var(--note-width,90%);max-width:none;box-sizing:border-box;margin:0 auto;padding:36px 28px 140px}
-#title{width:100%;padding:4px 0;background:none;color:inherit;border:0;outline:0;font:700 36px/1.25 Georgia,serif}
+/* The note width is a share of the window, but never less than --note-min-text: in a narrow pane (split view,
+   assistant open) the side margins shrink first, down to --note-min-margin; only then does the text get narrower. */
+main{width:min(max(calc(var(--note-vw,90) * 1vw),var(--note-min-text,760px)),calc(100% - 2 * var(--note-min-margin,12px)));max-width:none;box-sizing:border-box;margin:0 auto;padding:36px 28px 140px}
+@media(max-width:800px){main{padding-left:18px;padding-right:18px}}
+#title{width:100%;padding:4px 0;background:none;color:inherit;border:0;outline:0;font:700 var(--note-title-size,38px)/1.25 var(--note-font,"Times New Roman",Times,serif)}
 #title:focus-visible{outline:0}
 .metadata{color:var(--np-muted);font-size:12px;padding:2px 0 22px}
 #parent-title:not(:empty):before{content:"in ";opacity:.7}
+#parent-title.parent-link{cursor:pointer}
+#parent-title.parent-link:hover,#parent-title.parent-link:focus-visible{color:var(--np-link);text-decoration:underline}
 #preamble-panel{margin:0 0 20px;padding:10px 14px;border:1px solid var(--np-line);border-radius:8px;background:var(--np-raise)}
 summary{cursor:pointer;font-size:12px;color:var(--np-muted)}
 textarea{resize:vertical;min-height:90px;border:1px solid var(--np-line);border-radius:8px;background:var(--np-raise);color:inherit;padding:12px 14px;font:13px/1.7 ui-monospace,monospace}
@@ -40,7 +46,7 @@ textarea{resize:vertical;min-height:90px;border:1px solid var(--np-line);border-
 input::placeholder,textarea::placeholder{color:var(--np-muted);opacity:.8}
 .note-blocks{display:flex;flex-wrap:wrap;align-items:flex-start}
 .nb{position:relative;width:100%;padding:0;min-width:0}
-.block-inserter{position:relative;z-index:2;width:100%;height:4px;margin:0;display:flex;align-items:center;justify-content:center}
+.block-inserter{position:relative;z-index:2;width:100%;height:max(0px,calc(4px + (var(--note-line,1.75) - 1.75) * var(--note-size,18px) * 1.2));margin:0;display:flex;align-items:center;justify-content:center}
 .block-inserter:last-child{height:44px;margin-bottom:24px}
 .block-inserter:only-child .ins-pill{opacity:1;pointer-events:auto}
 .block-inserter:before{content:"";position:absolute;left:0;right:0;top:-7px;bottom:-7px}
@@ -71,7 +77,7 @@ input::placeholder,textarea::placeholder{color:var(--np-muted);opacity:.8}
 }
 @media(prefers-reduced-motion:reduce){.nb,.text-layout,.text-layout>textarea{transition:none!important}}
 .editing .nb-view{border-left:2px solid var(--np-line);padding-left:14px}
-.nb-view{font:17px/1.85 Georgia,serif;min-height:34px;cursor:text;border-radius:6px;margin:0 -10px;padding:2px 10px}
+.nb-view{font:var(--note-size,18px)/var(--note-line,1.75) var(--note-font,"Times New Roman",Times,serif);min-height:34px;cursor:text;border-radius:6px;margin:0 -10px;padding:2px 10px}
 .nb-view:hover{background:var(--np-raise)}
 .editing .nb-view:hover{background:none}
 .nb-view p{margin:.4em 0}
@@ -88,7 +94,7 @@ input::placeholder,textarea::placeholder{color:var(--np-muted);opacity:.8}
 .ink-tools [data-act="clear"]:hover:not(:disabled){color:var(--np-warn)}
 .ink-tools{gap:2px;padding:3px 4px;border-radius:10px}
 .sep{height:18px;border-left:1px solid var(--np-line);margin:0 4px}.ink-resize{height:12px;cursor:ns-resize;border-bottom:1px solid var(--np-line)}
-.note-references{margin-top:28px;border-top:1px solid var(--np-line);padding-top:18px;font:15px/1.75 Georgia,serif}.note-references h2{font-size:21px}.note-references li{margin-bottom:10px}.note-references a{color:var(--np-link);cursor:pointer}
+.note-references{margin-top:28px;border-top:1px solid var(--np-line);padding-top:18px;font:var(--note-size,18px)/var(--note-line,1.75) var(--note-font,"Times New Roman",Times,serif)}.note-references h2{font-size:21px}.note-references li{margin-bottom:10px}.note-references a{color:var(--np-link);cursor:pointer}
 
 
 .nb-ink .ink-scroll{border:1px solid var(--np-line)}
@@ -99,7 +105,7 @@ input::placeholder,textarea::placeholder{color:var(--np-muted);opacity:.8}
 .tex-view .tex-img img{max-width:100%}
 dialog{max-width:640px;max-height:85vh;overflow:auto;border:1px solid var(--np-line);border-radius:12px;background:var(--np-page);color:var(--np-ink);padding:26px 28px;line-height:1.7}
 dialog::backdrop{background:#0006}
-dialog h2{font:26px Georgia,serif;margin-top:0}
+dialog h2{font:26px var(--note-font,"Times New Roman",Times,serif);margin-top:0}
 #note-help{padding:26px 30px 22px;line-height:1.6;font-size:14px}
 #note-help h2{margin-bottom:6px}
 #note-help .help-lead{margin:0 0 18px;color:var(--np-muted)}
@@ -114,7 +120,7 @@ dialog h2{font:26px Georgia,serif;margin-top:0}
 .draft-actions{display:flex;gap:10px}
 .error{color:var(--np-warn)}
 @media(max-width:900px){.beside-ink,.beside-text{width:100%;padding-left:0;padding-right:0}.beside-ink+.block-inserter{display:flex}}
-@media(max-width:700px){main{padding:24px 18px 100px}#title{font-size:28px}}
+@media(max-width:700px){main{padding:24px 18px 100px}#title{font-size:calc(var(--note-title-size,38px) * .75)}}
 
 .nb-handle{position:absolute;left:-30px;top:2px;display:inline-flex;align-items:center;justify-content:center;width:22px;min-height:26px;height:26px;padding:0;border:0;background:transparent;color:var(--np-muted);cursor:grab;opacity:0;border-radius:5px}
 .nb:hover>.nb-handle,.nb:focus-within>.nb-handle,.nb-handle:focus-visible{opacity:1}
@@ -131,10 +137,11 @@ dialog h2{font:26px Georgia,serif;margin-top:0}
 .ctx-menu button.danger{color:var(--np-warn)}
 /* Tighter, Notion-like rhythm */
 main{padding:22px 28px 120px 56px}
-#title{font-size:34px;padding:2px 0}
+#title{font-size:var(--note-title-size,38px);padding:2px 0}
 .metadata{padding:0 0 12px}
-.nb-view{font-size:16.5px;line-height:1.7;min-height:28px;padding:1px 10px}
-.nb-view p{margin:.2em 0}
+.nb-view{font-size:var(--note-size,18px);line-height:var(--note-line,1.75);min-height:28px;padding:1px 10px}
+/* Paragraph and block gaps grow and shrink with the line spacing (they equal .2em and 4px at the default 1.75). */
+.nb-view p{margin:max(0em,calc(.2em + (var(--note-line,1.75) - 1.75) * .3em)) 0}
 .tex-h1{margin:.3em 0 .1em}.tex-h2{margin:.25em 0 .1em}
 .ink{margin:2px 0}
 @media(max-width:700px){main{padding:18px 18px 100px 40px}.nb-handle{left:-26px}}
@@ -301,3 +308,26 @@ body.embedded .chat-resizer,body.embedded #chat-close,body.embedded #chat-toggle
 /* Attach and iPhone buttons highlight like the model button does. */
 #chat-attach,#chat-phone{border-radius:8px;transition:background-color .12s,color .12s}
 #chat-attach:hover:not(:disabled),#chat-phone:hover:not(:disabled),#chat-phone[aria-expanded="true"]{background:var(--np-line);color:var(--np-ink)}
+
+/* Reading mode */
+/* Hidden, not removed: reading mode must not move or resize anything. */
+body.reading .nb-handle,body.reading .block-inserter,body.reading .ink-tools,body.reading .ink-resize{visibility:hidden;pointer-events:none}
+body.reading .nb-image input:placeholder-shown{display:none!important}
+body.reading .ink canvas{pointer-events:none}
+body.reading .nb-view{cursor:default}
+body.reading .nb-view:hover{background:none}
+/* An empty text block has nothing to read; keep its space so nothing shifts. */
+body.reading .nb-view .empty{visibility:hidden}
+body.reading #title{cursor:default}
+
+/* Citations and reference entries react to the pointer, so it is clear that clicking them does something. */
+a.cite{cursor:pointer;border-radius:3px;transition:background-color .12s}
+a.cite:hover,a.cite:focus-visible{background:color-mix(in srgb,var(--np-link) 14%,transparent);text-decoration:underline}
+
+/* LaTeX-style sectioning: bold, stepped sizes, the number set off from the title by a quad, generous space above. */
+.tex-view .tex-h{font-weight:700;line-height:1.3;margin:1.5em 0 .6em}
+.tex-view h2.tex-h{font-size:1.45em}
+.tex-view h3.tex-h{font-size:1.2em;margin-top:1.3em}
+.tex-view h4.tex-h{font-size:1em;margin-top:1.1em}
+.tex-secnum{display:inline-block;margin-right:1em}
+.tex-view>.tex-h:first-child{margin-top:.3em}

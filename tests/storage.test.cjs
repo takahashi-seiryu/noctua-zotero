@@ -23,6 +23,8 @@ async function fixture(t) {
     getCollections(){return this.collections||[];}
     async removeRelatedItem(other){this.relatedItems=this.relatedItems.filter(key=>key!==other.key);}
     setField(key,value){this[key]=value;}
+    addTag(tag){this.tags||=new Set();if(this.tags.has(tag))return false;this.tags.add(tag);return true;}
+    hasTag(tag){return !!this.tags?.has(tag);}
     setNote(html){this.html=html;}
     getNote(){return this.html||'';}
     addRelatedItem(other){if(!this.relatedItems.includes(other.key))this.relatedItems.push(other.key);}
@@ -346,4 +348,17 @@ test('cleanup preserves unrelated relations and continues after a malformed sour
   assert.equal(summary.trashed,1);assert.equal(summary.errors.length,1);
   assert.deepEqual(source.relatedItems,[ordinary.key]);assert.deepEqual(preview.relatedItems,[ordinary.key]);
   assert.equal(ordinary.deleted,false);assert.equal(ordinary.getNote(),'Ordinary');
+});
+
+test('every saved source carries the noctua tag, and notes saved before it existed are tagged once',async t=>{
+  const f=await fixture(t);
+  await f.storage.save(f.session,model.blank(f.session.id),'');
+  assert.equal(f.session.item.hasTag('noctua'),true,'a new note is tagged on its first save');
+  const old=new f.Z.Item('attachment');await old.save();old.attachmentFilename='older.noctua.json';
+  const pdf=new f.Z.Item('attachment');await pdf.save();pdf.attachmentFilename='paper.pdf';
+  f.session.item.tags.clear();
+  assert.equal(await f.storage.tagExisting(),2);
+  assert.equal(old.hasTag('noctua'),true);assert.equal(f.session.item.hasTag('noctua'),true);
+  assert.equal(pdf.hasTag('noctua'),false,'other attachments are never tagged');
+  assert.equal(await f.storage.tagExisting(),0,'running it again changes nothing');
 });

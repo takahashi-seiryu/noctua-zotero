@@ -50,6 +50,13 @@ var NoctuaAppearance = {
       try {
         const width = appearance?.getContentWidth?.() ?? 60, style = document.documentElement.style;
         style.setProperty("--note-width", width + "%");
+        style.setProperty("--note-vw", String(width));
+        const stacks = {times: '"Times New Roman",Times,serif', georgia: 'Georgia,"Times New Roman",serif', palatino: '"Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif',
+          sans: 'system-ui,-apple-system,"Segoe UI",sans-serif'};
+        style.setProperty("--note-font", stacks[appearance?.getFontFamily?.()] || stacks.times);
+        style.setProperty("--note-size", (appearance?.getFontSize?.() ?? 18) + "px");
+        style.setProperty("--note-title-size", (appearance?.getTitleSize?.() ?? 38) + "px");
+        style.setProperty("--note-line", String((appearance?.getLineSpacing?.() ?? 175) / 100));
         // The block being edited beside its preview may grow to this share of the window, whatever the note width.
         style.setProperty("--note-grow", String(Math.max(1, 90 / width)));
       } catch (_) {}

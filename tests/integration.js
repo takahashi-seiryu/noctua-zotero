@@ -369,6 +369,19 @@ print(json.dumps({"type":"turn.completed"}))
       assert(await wait(()=>d.documentElement.style.getPropertyValue("--note-width")==="60%"),"Note width setting did not reach the open editor");
       Zotero.Prefs.clear("extensions.noctua-notes.contentWidth",true);
       assert(await wait(()=>d.documentElement.style.getPropertyValue("--note-width")==="60%"),"Resetting the note width did not restore the default");
+      {const P=name=>"extensions.noctua-notes."+name,root=d.documentElement.style,cs=el=>d.defaultView.getComputedStyle(el);
+        Zotero.Prefs.set(P("fontSize"),22,true);Zotero.Prefs.set(P("titleSize"),44,true);Zotero.Prefs.set(P("lineSpacing"),200,true);Zotero.Prefs.set(P("fontFamily"),"georgia",true);
+        assert(await wait(()=>root.getPropertyValue("--note-size")==="22px"&&root.getPropertyValue("--note-title-size")==="44px"&&root.getPropertyValue("--note-line")==="2"&&/^Georgia/.test(root.getPropertyValue("--note-font"))),"Note text settings did not reach the open editor");
+        const view=d.querySelector(".nb-view"),title=d.getElementById("title");
+        assert(cs(view).fontSize==="22px"&&parseFloat(cs(view).lineHeight)===44,"Body text should use the chosen size and line spacing: "+cs(view).fontSize+" / "+cs(view).lineHeight);
+        assert(cs(title).fontSize==="44px"&&/Georgia/.test(cs(title).fontFamily),"The title should use its own size and the chosen font: "+cs(title).fontSize+" "+cs(title).fontFamily);
+        const refs=d.querySelector(".note-references");if(refs)assert(cs(refs).fontSize==="22px","References should match the body text size");
+        const gap=el=>parseFloat(cs(el).height);const inserter=d.querySelector(".block-inserter");const wide=gap(inserter);
+        Zotero.Prefs.set(P("lineSpacing"),130,true);
+        assert(await wait(()=>root.getPropertyValue("--note-line")==="1.3"),"Line spacing did not update");
+        assert(gap(inserter)<wide,"Block gaps should shrink with the line spacing: "+wide+" -> "+gap(inserter));
+        for(const name of ["fontSize","titleSize","lineSpacing","fontFamily"])Zotero.Prefs.clear(P(name),true);
+        assert(await wait(()=>root.getPropertyValue("--note-size")==="18px"&&root.getPropertyValue("--note-title-size")==="38px"&&root.getPropertyValue("--note-line")==="1.75"),"Resetting the note text settings did not restore the defaults");}
       Zotero.Prefs.set("extensions.noctua-notes.ink.color2","#112233",true);
       assert(await wait(()=>d.querySelector('.ink-tools [data-color="#112233"]')),"Pen colour setting did not reach open drawing toolbars");
       assert(d.querySelectorAll(".ink-tools")[0].querySelectorAll("[data-color]").length===5&&d.querySelector('.ink-tools [data-color]').dataset.color==="#e8e6e1","Palette should be the adaptive Ink pen plus four accents");
@@ -723,6 +736,74 @@ print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK pa
       let refused=false;try{await win2.fetch(root);}catch(_){refused=true;}
       assert(refused,"The server should stop listening when the session stops");
       result.passed.push("The iPhone camera server serves a page, enforces the token, accepts only JPEG photos, and stops");}
+    // ---- Split view: the paper's PDF in Zotero's reader beside the note
+    {const entry=[...NoctuaNotes.tabs.values()].find(candidate=>candidate.session.item?.key===session.item.key);
+      const ed=entry.editorWindow,button=ed.document.getElementById("split-toggle");
+      assert(button&&!button.hidden&&button.getAttribute("aria-pressed")==="false","The split view button is missing from the note header");
+      assert(button.nextElementSibling?.id==="chat-toggle","The split view button must sit left of the assistant button");
+      const until=async(test,ms=20000)=>{for(let n=0;n<ms/100&&!test();n++)await new Promise(r=>setTimeout(r,100));return test();};
+      button.click();
+      assert(await until(()=>Zotero.Reader.getByTabID(entry.id)?._internalReader),"Split view did not open the paper's PDF in a reader");
+      assert(await until(()=>Zotero.Reader.getByTabID(entry.id)._internalReader?._primaryView?._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentScaleValue==="page-width"),"The PDF should open fitted to the pane width");
+      const left=Zotero.Reader.getByTabID(entry.id)._iframe,box=container=>container.getBoundingClientRect();
+      const host=entry.frame.parentElement;
+      assert(button.getAttribute("aria-pressed")==="true","The split view button should show it is on");
+      assert(box(left).left<box(entry.frame).left&&box(left).width>200&&box(entry.frame).width>200,"The PDF should be on the left and the note on the right");
+      assert(host.querySelector('[role="separator"]'),"Split view should have a resize divider");
+      button.click();
+      assert(await until(()=>left.hidden)&&button.getAttribute("aria-pressed")==="false","Closing split view should hide the reader");
+      button.click();
+      assert(await until(()=>!left.hidden&&box(left).width>200),"Reopening split view should restore the same reader");
+      const shortcut=()=>ed.document.dispatchEvent(new ed.KeyboardEvent("keydown",{key:"\\",metaKey:true,bubbles:true,cancelable:true}));
+      shortcut();
+      assert(await until(()=>left.hidden&&button.getAttribute("aria-pressed")==="false"),"⌘\\ should close the split view");
+      shortcut();
+      assert(await until(()=>!left.hidden&&button.getAttribute("aria-pressed")==="true"),"⌘\\ should open the split view again");
+      // Switching: the library picker lists papers and swaps the reader.
+      const other=new Zotero.Item("journalArticle");other.libraryID=Zotero.Libraries.userLibraryID;other.setField("title","SPLIT SECOND PAPER");await other.saveTx();
+      const second=await Zotero.Attachments.importFromFile({file:PathUtils.join(PathUtils.parent(Services.io.newURI(Zotero.Prefs.get("extensions.noctua-notes.testScript",true)).QueryInterface(Ci.nsIFileURL).file.path),"fixtures","paper.pdf"),parentItemID:other.id});
+      const firstID=Zotero.Reader.getByTabID(entry.id).itemID;
+      host.querySelector('button[aria-haspopup="listbox"]').click();
+      const search=host.querySelector('input[type="search"]');search.value="SPLIT SECOND";search.dispatchEvent(new mainWindow.Event("input"));
+      assert(await until(()=>host.querySelector(`[data-noctua-split-pdf="${second.key}"]`)),"The library search did not list another paper's PDF");
+      host.querySelector(`[data-noctua-split-pdf="${second.key}"]`).click();
+      assert(await until(()=>Zotero.Reader.getByTabID(entry.id)?.itemID===second.id),"Choosing a library paper should switch the reader");
+      assert(firstID!==second.id&&Zotero.Reader._readers.filter(r=>r.tabID===entry.id).length===1,"Switching papers should leave exactly one reader in the tab");
+      // A citation opens the cited paper's PDF in the split view; one without a PDF points at the reference list instead.
+      const cite=(key)=>{const link=ed.document.createElement("a");link.dataset.noctuaCite=key;link.href="#";ed.document.getElementById("notes-stage").append(link);link.click();link.remove();};
+      cite(paper.key);
+      assert(await until(()=>Zotero.Reader.getByTabID(entry.id)?.itemID===firstID),"Clicking a citation should show the cited paper's PDF");
+      cite(other.key);
+      assert(await until(()=>Zotero.Reader.getByTabID(entry.id)?.itemID===second.id),"Clicking a citation should switch to the cited paper");
+      ed.document.getElementById("parent-title").click();
+      assert(await until(()=>Zotero.Reader.getByTabID(entry.id)?.itemID===firstID),"Clicking the paper name under the title should return to the note's own paper");
+      const bare=new Zotero.Item("journalArticle");bare.libraryID=Zotero.Libraries.userLibraryID;bare.setField("title","NO PDF PAPER");await bare.saveTx();
+      const refs=ed.document.getElementById("references");refs.innerHTML='<ol><li data-ref-key="'+bare.key+'">NO PDF PAPER</li></ol>';
+      cite(bare.key);
+      assert(await until(()=>refs.querySelector("li").classList.contains("tex-flash")),"A citation without a PDF should highlight its reference entry");
+      assert(Zotero.Reader.getByTabID(entry.id).itemID===firstID,"A citation without a PDF must not change the split view");
+      result.passed.push("Split view shows the paper's PDF left of the note, toggles, switches to any library paper, and opens cited papers");
+      // Reading mode: the note cannot be edited until editing is switched back on (⌘E).
+      const mode=ed.document.getElementById("mode-toggle"),body=ed.document.body,key=(k)=>ed.document.dispatchEvent(new ed.KeyboardEvent("keydown",{key:k,metaKey:true,bubbles:true,cancelable:true}));
+      assert(mode&&mode.nextElementSibling?.id==="split-toggle"&&!body.classList.contains("reading"),"The reading mode button is missing or reading mode is on by default");
+      const layoutOf=()=>[...ed.document.querySelectorAll(".nb-view,.ink,#title")].map(el=>{const r=el.getBoundingClientRect();return [Math.round(r.left),Math.round(r.width),Math.round(r.height)].join(",");}).join("|");
+      const before=layoutOf();
+      key("e");
+      assert(body.classList.contains("reading")&&mode.getAttribute("aria-pressed")==="true"&&ed.document.getElementById("title").readOnly,"⌘E should switch to reading mode");
+      const view=ed.document.querySelector(".nb-view");view?.click();
+      assert(!ed.document.querySelector(".nb.editing"),"Clicking text in reading mode must not start editing");
+      assert(ed.getComputedStyle(ed.document.querySelector(".nb-handle")).visibility==="hidden"&&ed.getComputedStyle(ed.document.querySelector(".block-inserter")).visibility==="hidden","Editing controls should be hidden in reading mode");
+      assert(layoutOf()===before,"Reading mode must not change the note's layout: "+before+" vs "+layoutOf());
+      mode.click();
+      assert(!body.classList.contains("reading")&&!ed.document.getElementById("title").readOnly,"The button should return to editing mode");
+      result.passed.push("Reading mode blocks edits and hides editing controls; ⌘E and the header button toggle it");
+    }
+    {assert(session.item.hasTag("noctua"),"A saved Noctua note should carry the noctua tag");
+      session.item.removeTag("noctua");await session.item.saveTx();
+      assert(!session.item.hasTag("noctua")&&await storage.tagExisting()>=1&&session.item.hasTag("noctua"),"Existing notes should be tagged by the migration");
+      const found=await Zotero.Tags.getTagItems(Zotero.Libraries.userLibraryID,Zotero.Tags.getID("noctua"));
+      assert(found.includes(session.item.id),"The tag selector should list the note under the noctua tag");
+      result.passed.push("Noctua notes carry the noctua tag (new saves and existing notes)");}
     result.sourceKey=session.item.key;
     result.windowTitle=win.document.title;
     result.dataDirectory=Zotero.DataDirectory.dir;
