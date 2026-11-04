@@ -33,11 +33,17 @@
         <div id="chat-effort-list" class="cmp-list" role="listbox" aria-label="Reasoning"></div>
       </div>
     </div>
+    <div id="chat-phone-pop" class="chat-phone-pop" role="dialog" aria-label="Photos from iPhone" hidden="hidden">
+      <div id="chat-phone-qr" class="cpp-qr" role="img" aria-label="QR code for the iPhone camera page"></div>
+      <p id="chat-phone-note" class="cpp-note" aria-live="polite"></p>
+      <p class="cpp-hint">Needs Tailscale on this computer and your iPhone. Photos are sent over your private tailnet.</p>
+    </div>
     <form id="chat-form">
       <div id="chat-attachments" class="chat-attachments" hidden="hidden"></div>
       <textarea id="chat-input" rows="2" aria-label="Message the assistant" placeholder="Ask about this paper. / commands, $ skills" spellcheck="false"></textarea>
       <div class="chat-composer-bar">
         <button id="chat-attach" class="icon-btn" type="button" aria-label="Attach files or images" title="Attach files or images"><span data-icon="paperclip"></span></button>
+        <button id="chat-phone" class="icon-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Take a photo with iPhone" title="Take a photo with iPhone" hidden="hidden"><span data-icon="smartphone"></span></button>
         <input id="chat-file" type="file" multiple hidden="hidden" />
         <button id="chat-fast" class="icon-btn chat-fast" type="button" aria-pressed="false" aria-label="Fast mode" title="Fast mode" hidden="hidden"><span data-icon="zap"></span></button>
         <button id="chat-model" class="chat-model-btn" type="button" aria-haspopup="dialog" aria-expanded="false" aria-label="Model and reasoning" title="Model and reasoning"><span class="chat-model-name">Default</span><span data-icon="chevron-down"></span></button>
@@ -47,6 +53,7 @@
   </aside>
   <script src="platform.js"></script>
   <script src="icons.js"></script>
+  <script src="vendor/qrcode/qrcode.js"></script>
   <script src="chat.js"></script>
   <script src="paper-chat.js"></script>
 </body>

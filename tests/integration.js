@@ -664,6 +664,13 @@ print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK pa
         assert(readerFrame&&readerFrame.src.endsWith("paper-chat.html"),"The chat view should host the paper assistant");
         let paneChat=null;for(let n=0;n<200&&!paneChat?.document?.getElementById("chat-log");n++){await new Promise(r=>setTimeout(r,50));paneChat=readerFrame.contentWindow?.wrappedJSObject||readerFrame.contentWindow;}
         assert(paneChat?.document?.getElementById("chat-input")?.placeholder.includes("paper")&&paneChat.document.getElementById("chat-log").textContent==="","The reader's chat did not start empty");
+        {const phoneBtn=paneChat.document.getElementById("chat-phone"),phonePop=paneChat.document.getElementById("chat-phone-pop");
+          assert(phoneBtn&&!phoneBtn.hidden,"The chat should offer the iPhone camera button");
+          phoneBtn.click();
+          for(let n=0;n<100&&paneChat.document.getElementById("chat-phone-note").textContent==="Starting…";n++)await new Promise(r=>setTimeout(r,50));
+          assert(!phonePop.hidden,"The iPhone popover should open");
+          assert(phonePop.querySelector("svg")||/Tailscale/.test(phonePop.textContent),"The popover shows a QR code, or explains that Tailscale is missing");
+          phoneBtn.click();assert(phonePop.hidden,"Pressing the iPhone button again should close the popover");}
         const frameBox=readerFrame.getBoundingClientRect(),deckBox=deck.getBoundingClientRect();
         result.readerView={frame:[Math.round(frameBox.width),Math.round(frameBox.height)],deck:[Math.round(deckBox.width),Math.round(deckBox.height)]};
         await new Promise(r=>setTimeout(r,500));
@@ -681,6 +688,41 @@ print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK pa
         mainWindow.Zotero_Tabs.close(tabID);
         for(let n=0;n<50&&sidenav.querySelector(".noctua-chat-wrapper:not([hidden])");n++)await new Promise(r=>setTimeout(r,100));}
       result.passed.push("The reading chat has its own button below Zotero's Notes button and its own full-pane view in the PDF reader");}
+    // Photos from an iPhone arrive over a token-protected local server and become chat attachments.
+    {const win2=Zotero.getMainWindow();
+      const phone=NoctuaNotes.makePhone({address:"127.0.0.1",allowPeer:NoctuaNotes.phoneModule.isLoopback});
+      const got=[];let ended=false;
+      const session=await phone.start(photo=>got.push(photo),{onEnd:()=>{ended=true;}});
+      assert(/^http:\/\/127\.0\.0\.1:\d+\/[0-9a-f]{32}\/$/.test(session.url),"Unexpected session address: "+session.url);
+      const root=session.url,base=root.slice(0,root.indexOf("/",8));
+      const page=await win2.fetch(root);
+      assert(page.status===200&&(await page.text()).includes('capture="environment"'),"The camera page was not served");
+      assert((await win2.fetch(base+"/wrongtoken/")).status===404,"A wrong token must be refused");
+      const jpeg=new Uint8Array([0xff,0xd8,0xff,0xe0,0,16,74,70,73,70,0,1,1,0,0,1,0,1,0,0,0xff,0xd9]);
+      assert((await win2.fetch(root+"up?name=a.jpg",{method:"POST",body:jpeg})).status===200,"A JPEG upload should be accepted");
+      assert(got.length===1&&got[0].type==="image/jpeg"&&got[0].data===btoa(String.fromCharCode(...jpeg)),"The photo did not reach the chat");
+      {const big=new Uint8Array(1500000);big.set(jpeg);for(let i=jpeg.length;i<big.length;i++)big[i]=(i*31)%251;
+        const response=await win2.fetch(root+"up?name=big.jpg",{method:"POST",body:new Blob([big])});
+        assert(response.status===200&&got.length===2&&got[1].data.length===Math.ceil(big.length/3)*4,"A large photo did not arrive: "+response.status+" "+got.length);}
+      {const {Subprocess}=ChromeUtils.importESModule("resource://gre/modules/Subprocess.sys.mjs");
+        const tmp=PathUtils.join(Services.dirsvc.get("TmpD",Ci.nsIFile).path,"noctua-probe.jpg");
+        const blob=new Uint8Array(900000);blob.set(jpeg);for(let i=jpeg.length;i<blob.length;i++)blob[i]=(i*17)%253;await IOUtils.write(tmp,blob);
+        const codes=[];
+        for(let n=0;n<12;n++){const proc=await Subprocess.call({command:"/usr/bin/curl",arguments:["-sS","-o","/dev/null","-w","%{http_code} exit=%{exitcode}","--data-binary","@"+tmp,"-H","Content-Type: image/jpeg",root+"up?name=c"+n+".jpg"],stderr:"stdout"});
+          let out="",chunk;while((chunk=await proc.stdout.readString()))out+=chunk;codes.push(out.trim());}
+        assert(codes.every(code=>code.startsWith("200")),"Repeated curl uploads should all succeed: "+codes.join(" | "));}
+      assert((await win2.fetch(root+"up",{method:"POST",body:new Uint8Array([0x89,0x50,0x4e,0x47,0,0,0,0])})).status===415,"Only JPEG photos are accepted");
+      assert((await win2.fetch(base+"/wrongtoken/up",{method:"POST",body:jpeg})).status===404&&got.length===14,"Uploads without the token must be refused");
+      session.stop();
+      {const short=NoctuaNotes.makePhone({address:"127.0.0.1",allowPeer:NoctuaNotes.phoneModule.isLoopback});
+        let expired=false;const quick=await short.start(()=>{},{ttlMs:300,onEnd:()=>{expired=true;}});
+        assert((await win2.fetch(quick.url)).status===200,"A fresh session should serve the page");
+        for(let n=0;n<40&&!expired;n++)await new Promise(r=>setTimeout(r,50));
+        let gone=false;try{await win2.fetch(quick.url);}catch(_){gone=true;}
+        assert(expired&&gone,"A session must end at its fixed time limit");}
+      let refused=false;try{await win2.fetch(root);}catch(_){refused=true;}
+      assert(refused,"The server should stop listening when the session stops");
+      result.passed.push("The iPhone camera server serves a page, enforces the token, accepts only JPEG photos, and stops");}
     result.sourceKey=session.item.key;
     result.windowTitle=win.document.title;
     result.dataDirectory=Zotero.DataDirectory.dir;

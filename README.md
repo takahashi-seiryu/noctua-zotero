@@ -26,6 +26,10 @@ The assistant needs the [Claude](https://docs.claude.com/en/docs/claude-code) or
   In the PDF reader, the **✨ Noctua Chat** button (below Zotero's yellow Notes button) opens a read-only chat about the
   paper: full text with page markers, metadata and your highlights. Model, reasoning level, Codex Fast mode, attachments,
   `/` commands and `$` skills are supported.
+- **iPhone photos**: the 📱 button in the chat shows a QR code; scan it with the iPhone camera and every photo you take
+  lands in the chat as an attachment (works with Claude and Codex). It runs over [Tailscale](https://tailscale.com),
+  so both devices need Tailscale on the same tailnet; only tailnet devices can reach the temporary server, which needs the
+  QR's one-time token and stops when you close the popover or 10 minutes after the QR code appears. JPEG only, 10 MB per photo.
 - **Import/Export**: **Tools → Import / Export Noctua Source** (also in the item menu) reads original Noctua v1 JSON
   (keep its `images/` folder beside it) or writes a portable `.noctua.json` with inline images.
 
