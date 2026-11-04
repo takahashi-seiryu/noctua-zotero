@@ -714,6 +714,12 @@ print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK pa
       assert((await win2.fetch(root+"up",{method:"POST",body:new Uint8Array([0x89,0x50,0x4e,0x47,0,0,0,0])})).status===415,"Only JPEG photos are accepted");
       assert((await win2.fetch(base+"/wrongtoken/up",{method:"POST",body:jpeg})).status===404&&got.length===14,"Uploads without the token must be refused");
       session.stop();
+      {const short=NoctuaNotes.makePhone({address:"127.0.0.1",allowPeer:NoctuaNotes.phoneModule.isLoopback});
+        let expired=false;const quick=await short.start(()=>{},{ttlMs:300,onEnd:()=>{expired=true;}});
+        assert((await win2.fetch(quick.url)).status===200,"A fresh session should serve the page");
+        for(let n=0;n<40&&!expired;n++)await new Promise(r=>setTimeout(r,50));
+        let gone=false;try{await win2.fetch(quick.url);}catch(_){gone=true;}
+        assert(expired&&gone,"A session must end at its fixed time limit");}
       let refused=false;try{await win2.fetch(root);}catch(_){refused=true;}
       assert(refused,"The server should stop listening when the session stops");
       result.passed.push("The iPhone camera server serves a page, enforces the token, accepts only JPEG photos, and stops");}

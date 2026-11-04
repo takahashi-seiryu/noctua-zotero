@@ -262,7 +262,7 @@ var NoctuaChat = {
           attached.push({name: photo.name, type: photo.type, data: photo.data, preview: `data:${photo.type};base64,${photo.data}`});
           renderAttachments(); received++;
           phoneNote.textContent = `${received} photo${received === 1 ? "" : "s"} received. Take more or close this.`;
-        }, {onEnd: () => { if (mine === phoneToken) { phoneNote.textContent = "The session ended after 10 idle minutes."; phoneQR.replaceChildren(); } }});
+        }, {onEnd: () => { if (mine === phoneToken) { phoneNote.textContent = "This QR code expired after 10 minutes. Press the button again for a new one."; phoneQR.replaceChildren(); } }});
         if (mine !== phoneToken) { session.stop(); return; }
         phoneSession = session;
         drawQR(session.url);
