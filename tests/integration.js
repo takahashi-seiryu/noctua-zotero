@@ -701,8 +701,18 @@ print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK pa
       const jpeg=new Uint8Array([0xff,0xd8,0xff,0xe0,0,16,74,70,73,70,0,1,1,0,0,1,0,1,0,0,0xff,0xd9]);
       assert((await win2.fetch(root+"up?name=a.jpg",{method:"POST",body:jpeg})).status===200,"A JPEG upload should be accepted");
       assert(got.length===1&&got[0].type==="image/jpeg"&&got[0].data===btoa(String.fromCharCode(...jpeg)),"The photo did not reach the chat");
+      {const big=new Uint8Array(1500000);big.set(jpeg);for(let i=jpeg.length;i<big.length;i++)big[i]=(i*31)%251;
+        const response=await win2.fetch(root+"up?name=big.jpg",{method:"POST",body:new Blob([big])});
+        assert(response.status===200&&got.length===2&&got[1].data.length===Math.ceil(big.length/3)*4,"A large photo did not arrive: "+response.status+" "+got.length);}
+      {const {Subprocess}=ChromeUtils.importESModule("resource://gre/modules/Subprocess.sys.mjs");
+        const tmp=PathUtils.join(Services.dirsvc.get("TmpD",Ci.nsIFile).path,"noctua-probe.jpg");
+        const blob=new Uint8Array(900000);blob.set(jpeg);for(let i=jpeg.length;i<blob.length;i++)blob[i]=(i*17)%253;await IOUtils.write(tmp,blob);
+        const codes=[];
+        for(let n=0;n<12;n++){const proc=await Subprocess.call({command:"/usr/bin/curl",arguments:["-sS","-o","/dev/null","-w","%{http_code} exit=%{exitcode}","--data-binary","@"+tmp,"-H","Content-Type: image/jpeg",root+"up?name=c"+n+".jpg"],stderr:"stdout"});
+          let out="",chunk;while((chunk=await proc.stdout.readString()))out+=chunk;codes.push(out.trim());}
+        assert(codes.every(code=>code.startsWith("200")),"Repeated curl uploads should all succeed: "+codes.join(" | "));}
       assert((await win2.fetch(root+"up",{method:"POST",body:new Uint8Array([0x89,0x50,0x4e,0x47,0,0,0,0])})).status===415,"Only JPEG photos are accepted");
-      assert((await win2.fetch(base+"/wrongtoken/up",{method:"POST",body:jpeg})).status===404&&got.length===1,"Uploads without the token must be refused");
+      assert((await win2.fetch(base+"/wrongtoken/up",{method:"POST",body:jpeg})).status===404&&got.length===14,"Uploads without the token must be refused");
       session.stop();
       let refused=false;try{await win2.fetch(root);}catch(_){refused=true;}
       assert(refused,"The server should stop listening when the session stops");

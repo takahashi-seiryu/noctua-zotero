@@ -463,7 +463,7 @@ async function startup({id, version, rootURI}) {
     }]});
   }
   if (Zotero.Prefs.get("extensions.noctua-notes.testScript", true)) {
-    const testScope = {Zotero, NoctuaNotes, Services, IOUtils, PathUtils, TextEncoder, TextDecoder, setTimeout};
+    const testScope = {Zotero, NoctuaNotes, Services, IOUtils, PathUtils, TextEncoder, TextDecoder, setTimeout, ChromeUtils, Ci};
     Services.scriptloader.loadSubScript(Zotero.Prefs.get("extensions.noctua-notes.testScript", true), testScope);
   }
 }
