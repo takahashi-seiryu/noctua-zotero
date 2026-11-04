@@ -298,3 +298,6 @@ body.embedded .chat-resizer,body.embedded #chat-close,body.embedded #chat-toggle
 .cpp-qr{min-height:24px;line-height:0;border-radius:8px;overflow:hidden}
 .cpp-note{margin:0;font:13px var(--font-ui);color:var(--np-ink);text-align:center}
 .cpp-hint{margin:0;font:11.5px var(--font-ui);color:var(--np-muted);text-align:center}
+/* Attach and iPhone buttons highlight like the model button does. */
+#chat-attach,#chat-phone{border-radius:8px;transition:background-color .12s,color .12s}
+#chat-attach:hover:not(:disabled),#chat-phone:hover:not(:disabled),#chat-phone[aria-expanded="true"]{background:var(--np-line);color:var(--np-ink)}
