@@ -382,6 +382,26 @@ print(json.dumps({"type":"turn.completed"}))
         assert(gap(inserter)<wide,"Block gaps should shrink with the line spacing: "+wide+" -> "+gap(inserter));
         for(const name of ["fontSize","titleSize","lineSpacing","fontFamily"])Zotero.Prefs.clear(P(name),true);
         assert(await wait(()=>root.getPropertyValue("--note-size")==="18px"&&root.getPropertyValue("--note-title-size")==="38px"&&root.getPropertyValue("--note-line")==="1.75"),"Resetting the note text settings did not restore the defaults");}
+      {const box=d.querySelector(".nb-text textarea"),original=box.value;
+        box.value="\\begin{tabular}{|l|r|}\\hline a & b \\\\ \\hline c & d \\\\ \\hline\\end{tabular}";box.dispatchEvent(new win.Event("input",{bubbles:true}));
+        assert(await wait(()=>box.closest(".nb").querySelector("table.tex-table td")),"The tabular did not render");
+        const cs=el=>d.defaultView.getComputedStyle(el),block=box.closest(".nb");
+        await wait(()=>parseFloat(cs(block.querySelector("td")).borderLeftWidth)>=1);
+        const first=cs(block.querySelector("td")),end=cs(block.querySelector("tr:last-child td:last-child"));
+        assert(parseFloat(first.borderLeftWidth)>=1&&parseFloat(first.borderTopWidth)>=1&&parseFloat(end.borderRightWidth)>=1&&parseFloat(end.borderBottomWidth)>=1,"Tabular rules should be drawn: "+[...block.querySelectorAll("td")].map(td=>td.className+" L"+cs(td).borderLeftWidth+cs(td).borderLeftStyle+" R"+cs(td).borderRightWidth+" T"+cs(td).borderTopWidth+" B"+cs(td).borderBottomWidth).join(" | ")+" || "+first.borderLeftWidth+" "+first.borderTopWidth+" "+end.borderRightWidth+" "+end.borderBottomWidth);
+        const cols=14,wideSrc="\\begin{tabular}{"+"l".repeat(cols)+"}"+Array.from({length:cols},(_,n)=>"column number "+n).join(" & ")+"\\end{tabular}";
+        box.value=wideSrc;box.dispatchEvent(new win.Event("input",{bubbles:true}));
+        assert(await wait(()=>block.querySelectorAll("td").length===cols),"The wide tabular did not render");
+        await new Promise(r=>setTimeout(r,800));  // the text column animates its width after an edit
+        const wrap=block.querySelector(".tex-table-wrap"),column=block.querySelector(".nb-view").getBoundingClientRect(),w=wrap.getBoundingClientRect();
+        assert(w.width>column.width+40&&w.left>=0&&w.right<=d.documentElement.clientWidth,"A wide table should extend into the margins and stay inside the window: column "+Math.round(column.width)+" main "+JSON.stringify([d.querySelector("main"),block,block.querySelector(".text-layout"),block.querySelector(".nb-view")].map(el=>{const r=el.getBoundingClientRect();return [Math.round(r.left),Math.round(r.right)];}))+", table "+Math.round(w.left)+"-"+Math.round(w.right)+" of "+d.documentElement.clientWidth);
+        // The one-column layout (narrow windows, preview below) must not let a wide table widen the note.
+        {const html=d.documentElement,before=html.dataset.preview;html.dataset.preview="below";
+          await new Promise(r=>setTimeout(r,400));
+          const mainBox=d.querySelector("main").getBoundingClientRect(),blockBox=block.getBoundingClientRect();
+          assert(blockBox.width<=mainBox.width&&d.documentElement.scrollWidth<=d.documentElement.clientWidth+1,"A wide table widened the note: block "+Math.round(blockBox.width)+" main "+Math.round(mainBox.width)+" page "+d.documentElement.scrollWidth);
+          if(before===undefined)delete html.dataset.preview;else html.dataset.preview=before;}
+        box.value=original;box.dispatchEvent(new win.Event("input",{bubbles:true}));}
       Zotero.Prefs.set("extensions.noctua-notes.ink.color2","#112233",true);
       assert(await wait(()=>d.querySelector('.ink-tools [data-color="#112233"]')),"Pen colour setting did not reach open drawing toolbars");
       assert(d.querySelectorAll(".ink-tools")[0].querySelectorAll("[data-color]").length===5&&d.querySelector('.ink-tools [data-color]').dataset.color==="#e8e6e1","Palette should be the adaptive Ink pen plus four accents");
@@ -700,6 +720,22 @@ print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK pa
           other.click();
           assert(deck.selectedPanel!==view&&!wrapper.classList.contains("highlight"),"Pressing one of Zotero's own buttons should leave the chat");
           wrapper.querySelector(".btn").click();assert(deck.selectedPanel===view,"The chat button should open the chat again");}
+        // A second reader tab gets its own chat, and the view shows only the selected tab's chat.
+        {const otherPDF=await Zotero.Attachments.importFromFile({file:pdfPath});
+          const otherReader=await Zotero.Reader.open(otherPDF.id);
+          for(let n=0;n<100&&(mainWindow.Zotero_Tabs.selectedID!==otherReader.tabID||wrapper.hidden);n++)await new Promise(r=>setTimeout(r,100));
+          if(deck.selectedPanel!==view)wrapper.querySelector(".btn").click();
+          for(let n=0;n<150&&view.querySelectorAll("iframe").length<2;n++)await new Promise(r=>setTimeout(r,100));
+          const shown=()=>[...view.querySelectorAll("iframe")].filter(frame=>mainWindow.getComputedStyle(frame).display!=="none");
+          assert(view.querySelectorAll("iframe").length===2,"Each reader tab should keep its own chat");
+          assert(shown().length===1,"Only the selected tab's chat may show, not "+shown().length);
+          mainWindow.Zotero_Tabs.close(otherReader.tabID);
+          for(let n=0;n<50&&view.querySelectorAll("iframe").length>1;n++)await new Promise(r=>setTimeout(r,100));
+          assert(view.querySelectorAll("iframe").length===1&&shown().length<=1,"Closing a reader tab should remove its chat");
+          await otherPDF.eraseTx();
+          if(mainWindow.Zotero_Tabs.selectedID!==tabID)mainWindow.Zotero_Tabs.select(tabID);
+          await new Promise(r=>setTimeout(r,300));
+          if(deck.selectedPanel!==view)wrapper.querySelector(".btn").click();}
         wrapper.querySelector(".btn").click();
         assert(deck.selectedPanel!==view&&!wrapper.classList.contains("highlight"),"Pressing the button again should bring the item pane back");
         mainWindow.Zotero_Tabs.close(tabID);

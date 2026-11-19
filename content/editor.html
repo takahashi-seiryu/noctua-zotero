@@ -103,7 +103,7 @@
         <li><code>equation</code>, <code>align</code>, <code>gather</code>, <code>cases</code> and matrices work, with automatic numbering; <code>\label{key}</code> and <code>\ref{key}</code> / <code>\eqref{key}</code> cross-reference them.</li>
         <li>Markdown basics also work at the start of a line: <code># Heading</code>, <code>- item</code>, <code>1. item</code>, <code>&gt; quote</code>, <code>---</code>, and inline <code>**bold**</code>, <code>*italic*</code>, <code>`code`</code>.</li>
         <li>Shared <code>\newcommand</code> macros go in the <em>LaTeX preamble</em> (⋯ menu).</li>
-        <li>Tables: <code>\begin{tabular}{lcr} … \end{tabular}</code>, a <code>table</code> environment with <code>\caption</code>, or <code>| pipe | tables |</code>.</li>
+        <li>Tables: <code>\begin{tabular}{|l|c|r|} … \end{tabular}</code> with <code>\hline</code> and <code>\cline{2-3}</code> rules, a <code>table</code> environment with <code>\caption</code>, or <code>| pipe | tables |</code>. Wide tables use the side margins and scroll when wider than the window.</li>
       </ul>
     </section>
 
