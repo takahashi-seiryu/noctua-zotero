@@ -56,7 +56,8 @@ input::placeholder,textarea::placeholder{color:var(--np-muted);opacity:.8}
 .ins-pill button{display:inline-flex;align-items:center;gap:5px;font-size:12px;min-height:22px;padding:1px 9px;border:0;background:transparent;border-radius:12px;color:var(--np-muted)}
 .ins-pill button:hover{background:var(--np-raise);color:var(--np-ink)}
 .ins-pill [data-icon] svg{width:13px;height:13px}
-.text-layout{display:grid;gap:10px}
+/* One column that never grows past the page: a wide table must not widen the note (it scrolls or uses the margins instead). */
+.text-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}
 .text-layout>textarea{display:none;width:100%;min-height:96px;overflow:hidden;resize:none}
 .editing .text-layout>textarea{display:block}
 /* Source on the left, rendered preview on the right when there is room (wider still with the assistant open).
@@ -156,10 +157,23 @@ textarea#title{display:block;resize:none;overflow:hidden;min-height:0;border:0;b
 .yt-poster:focus-visible{outline:2px solid var(--np-link);outline-offset:2px}
 .tex-yt-link{display:block;margin-top:4px;font-size:12px;color:var(--np-muted)}
 .tex-table-wrap{overflow-x:auto;margin:8px 0}
+/* A table wider than the text column may use the side margins and stays centred on the text column, like equations;
+   only a table wider than the window (minus the assistant panel and a small gutter) scrolls. --chat-used is the room the open
+   assistant panel takes; --column-shift is how far the text column sits right of the page centre (handle gutter 56px left, 28px right),
+   taken off both sides so the table never leaves the window. */
+body.chat-open{--chat-used:var(--chat-width,460px)}
+:root{--column-shift:14px}
+@media(max-width:700px){:root{--column-shift:11px}}
+.nb:not(.editing) .tex-table-wrap{width:max-content;min-width:100%;max-width:max(100%,calc(100vw - var(--chat-used,0px) - 2 * var(--note-min-margin,12px) - 16px - 2 * var(--column-shift)));margin-left:50%;transform:translateX(-50%)}
 .tex-table{border-collapse:collapse;font-size:.95em;margin:0 auto}
+/* LaTeX l/c/r columns never wrap; p{..}, m{..}, b{..} and X columns do. Markdown tables wrap as usual. */
 .tex-table td,.tex-table th{padding:4px 12px;vertical-align:top}
-.tex-table tr.rule td{border-top:1px solid var(--np-ink)}
-.tex-table.rule-bottom tr:last-child td{border-bottom:1px solid var(--np-ink)}
+.tex-table:not(.md) td{white-space:nowrap}
+.tex-table td.wrap{white-space:normal;min-width:6em}
+.tex-table td.rt{border-top:1px solid var(--np-ink)}
+.tex-table td.vl{border-left:1px solid var(--np-ink)}
+.tex-table td.vr{border-right:1px solid var(--np-ink)}
+.tex-table td.rb{border-bottom:1px solid var(--np-ink)}
 .tex-table.md th{border-bottom:1px solid var(--np-ink);font-weight:600}
 .tex-table.md td{border-bottom:1px solid var(--np-line)}
 .tex-tablefloat{margin:12px 0}
@@ -248,7 +262,7 @@ body.chat-open{padding-right:var(--chat-width,460px)}
 .chat-resizer:focus-visible{outline:none}
 body.chat-resizing{cursor:col-resize;user-select:none}
 body.chat-resizing iframe,body.chat-resizing #blocks{pointer-events:none}
-@media(max-width:900px){#chat{width:min(var(--chat-width,460px),100vw)}body.chat-open{padding-right:0}.chat-resizer{display:none}}
+@media(max-width:900px){#chat{width:min(var(--chat-width,460px),100vw)}body.chat-open{padding-right:0;--chat-used:0px}.chat-resizer{display:none}}
 
 .cite-suggest{position:fixed;z-index:70;max-height:272px;overflow:auto;padding:4px;background:var(--np-page);border:1px solid var(--np-line);border-radius:10px;box-shadow:0 10px 30px #0003}
 .cite-row{padding:6px 10px;border-radius:7px;cursor:pointer}

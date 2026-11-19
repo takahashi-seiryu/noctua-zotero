@@ -12,7 +12,7 @@ test("tabular renders alignment, rules, multicolumn, escaped ampersands and math
 Name & \multicolumn{2}{c}{Score} \\ \hline
 A \& B & 1 & $x_1 & y$ \\ \hline
 \end{tabular}`);
-  assert.match(html,/<table class="tex-table rule-bottom">/);
+  assert.match(html,/<table class="tex-table">/);assert.equal((html.match(/class="[^"]*\brb\b/g)||[]).length,3);
   assert.match(html,/colspan="2" style="text-align:center">Score/);
   assert.match(html,/A &amp; B/);assert.match(html,/text-align:right"><span class="katex">x_1 & y/);
   assert.equal((html.match(/<tr/g)||[]).length,2);
@@ -64,4 +64,42 @@ test("eqnarray, spacing commands, colours, rules and the title block render inst
   assert.match(out,/<span style="color:red">R<\/span>/);assert.match(out,/<span style="background:#ffee00">H<\/span>/);assert.match(out,/<span style="color:blue">B<\/span>/);
   assert.match(out,/<hr class="tex-rule">/);assert.match(out,/<div class="tex-title"><h1>My <em>Note<\/em><\/h1><p class="tex-author">Ada<\/p><p class="tex-date">2026<\/p><\/div>/);
   assert.doesNotMatch(render("\\textcolor{red;background:url(x)}{bad}"),/style=/);
+});
+test("tabular draws vertical rules from the column spec and horizontal rules from \\hline and \\cline",()=>{
+  const html=render(String.raw`\begin{tabular}{|l|c|r|}
+\hline
+a & b & c \\ \hline
+d & e & f \\ \cline{2-3}
+g & h & i \\ \hline
+\end{tabular}`);
+  const rows=html.match(/<tr[^>]*>.*?<\/tr>/g);
+  assert.equal(rows.length,3);
+  // |l|c|r|: a rule left of the first column, between every pair, and right of the last
+  assert.match(rows[0],/<td class="rt vl vr"[^>]*>a<\/td><td class="rt vr"[^>]*>b<\/td><td class="rt vr"[^>]*>c<\/td>/);
+  // no rule above the second row's cells' neighbours except the \hline after row one, none under row two's first column
+  assert.match(rows[1],/<td class="rt vl vr"[^>]*>d/);
+  // \cline{2-3} above h and i only; the closing \hline under every cell of the last row
+  assert.match(rows[2],/<td class="rb vl vr"[^>]*>g<\/td><td class="rt rb vr"[^>]*>h<\/td><td class="rt rb vr"[^>]*>i<\/td>/);
+  // no bars in the spec, no vertical rules
+  assert.doesNotMatch(render(String.raw`\begin{tabular}{lc}a&b\\c&d\end{tabular}`),/class="[^"]*v[lr]/);
+  // a multicolumn spec brings its own bars
+  assert.match(render(String.raw`\begin{tabular}{ll}\multicolumn{2}{|c|}{x}\end{tabular}`),/<td class="vl vr" colspan="2"/);
+});
+test("tabular keeps the grid for short rows, expands *{n}{..}, closes with a partial \\cline and wraps only p columns",()=>{
+  const rowsOf=src=>render(src).match(/<tr[^>]*>.*?<\/tr>/g);
+  // a row with one cell in a three-column grid still draws every column's rules
+  const short=rowsOf(String.raw`\begin{tabular}{|l|l|l|}\hline a\\\hline b&c&d\\\hline\end{tabular}`);
+  assert.equal((short[0].match(/<td/g)||[]).length,3);
+  assert.match(short[0],/<td class="rt vl vr"[^>]*>a<\/td><td class="rt vr"[^>]*><\/td><td class="rt vr"[^>]*><\/td>/);
+  // *{3}{c|} is three centred columns with bars
+  const star=rowsOf(String.raw`\begin{tabular}{|*{3}{c|}}a&b&c\end{tabular}`)[0];
+  assert.match(star,/<td class="vl vr" style="text-align:center">a<\/td><td class="vr" style="text-align:center">b<\/td><td class="vr" style="text-align:center">c<\/td>/);
+  assert.equal(rowsOf(String.raw`\begin{tabular}{*{999999}{l}}a\end{tabular}`).length,1);
+  // a closing \cline{1-2} underlines only those columns
+  const cl=rowsOf(String.raw`\begin{tabular}{lll}a&b&c\\\cline{1-2}\end{tabular}`);
+  assert.equal(cl.length,1);assert.match(cl[0],/<td class="rb"[^>]*>a<\/td><td class="rb"[^>]*>b<\/td><td style[^>]*>c<\/td>/);
+  // p{3cm} wraps at its width; l does not; hostile widths are ignored
+  const p=rowsOf(String.raw`\begin{tabular}{p{3cm}l}x&y\end{tabular}`)[0];
+  assert.match(p,/<td class="wrap" style="text-align:left;width:3cm">x<\/td><td style="text-align:left">y<\/td>/);
+  assert.doesNotMatch(render(String.raw`\begin{tabular}{p{1cm;background:red}}x\end{tabular}`),/background/);
 });
