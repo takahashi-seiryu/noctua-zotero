@@ -696,6 +696,22 @@ print(json.dumps({"type":"result","subtype":"success","result":"NOTE-PAPER-OK pa
           other.click();
           assert(deck.selectedPanel!==view&&!wrapper.classList.contains("highlight"),"Pressing one of Zotero's own buttons should leave the chat");
           wrapper.querySelector(".btn").click();assert(deck.selectedPanel===view,"The chat button should open the chat again");}
+        // A second reader tab gets its own chat, and the view shows only the selected tab's chat.
+        {const otherPDF=await Zotero.Attachments.importFromFile({file:pdfPath});
+          const otherReader=await Zotero.Reader.open(otherPDF.id);
+          for(let n=0;n<100&&(mainWindow.Zotero_Tabs.selectedID!==otherReader.tabID||wrapper.hidden);n++)await new Promise(r=>setTimeout(r,100));
+          if(deck.selectedPanel!==view)wrapper.querySelector(".btn").click();
+          for(let n=0;n<150&&view.querySelectorAll("iframe").length<2;n++)await new Promise(r=>setTimeout(r,100));
+          const shown=()=>[...view.querySelectorAll("iframe")].filter(frame=>mainWindow.getComputedStyle(frame).display!=="none");
+          assert(view.querySelectorAll("iframe").length===2,"Each reader tab should keep its own chat");
+          assert(shown().length===1,"Only the selected tab's chat may show, not "+shown().length);
+          mainWindow.Zotero_Tabs.close(otherReader.tabID);
+          for(let n=0;n<50&&view.querySelectorAll("iframe").length>1;n++)await new Promise(r=>setTimeout(r,100));
+          assert(view.querySelectorAll("iframe").length===1&&shown().length<=1,"Closing a reader tab should remove its chat");
+          await otherPDF.eraseTx();
+          if(mainWindow.Zotero_Tabs.selectedID!==tabID)mainWindow.Zotero_Tabs.select(tabID);
+          await new Promise(r=>setTimeout(r,300));
+          if(deck.selectedPanel!==view)wrapper.querySelector(".btn").click();}
         wrapper.querySelector(".btn").click();
         assert(deck.selectedPanel!==view&&!wrapper.classList.contains("highlight"),"Pressing the button again should bring the item pane back");
         mainWindow.Zotero_Tabs.close(tabID);
