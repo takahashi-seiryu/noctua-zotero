@@ -467,48 +467,91 @@ const NoctuaLatex = (() => {
     return rows;
   }
 
-  // Column spec like |l|c|r| or p{3cm}l -> ['left','center','right', ...].
-  function columnAligns(spec) {
+  // Column spec like |l|c|r| or p{3cm}l -> [{align, left, right, wrap, width}, ...]; left/right mark vertical
+  // rules. l/c/r columns never wrap (as in LaTeX); p/m/b/X columns wrap, at their width when it is a plain length.
+  const LENGTH = /^\s*(\d+(?:\.\d+)?|\.\d+)\s*(cm|mm|in|pt|em|ex)\s*$/;
+  function expandStars(spec) {
+    // *{3}{c|} -> c|c|c| (bounded, so a hostile spec cannot blow up)
+    for (let guard = 0; guard < 8; guard++) {
+      const at = spec.search(/\*\s*\{/);
+      if (at < 0) break;
+      const n = group(spec, spec.indexOf('{', at)), body = spec[n.end] === '{' ? group(spec, n.end) : null;
+      if (!body) break;
+      const count = Math.min(50, Math.max(0, parseInt(n.text, 10) || 0));
+      spec = spec.slice(0, at) + body.text.repeat(count) + spec.slice(body.end);
+      if (spec.length > 2000) break;
+    }
+    return spec;
+  }
+  function columnSpecs(spec) {
+    spec = expandStars(spec);
     const out = [];
+    let bar = false;
+    // A bar between two columns is drawn once, as the right rule of the first.
+    const push = (align, extra = {}) => { out.push({ align, left: bar && !out.at(-1)?.right, right: false, wrap: false, width: '', ...extra }); bar = false; };
     for (let i = 0; i < spec.length; i++) {
       const c = spec[i];
-      if (c === 'l' || c === 'c' || c === 'r') out.push({ l: 'left', c: 'center', r: 'right' }[c]);
-      else if ('pmbX'.includes(c)) { out.push('left'); if (spec[i + 1] === '{') i = group(spec, i + 1).end - 1; }
+      if (c === '|') { bar = true; if (out.length) out[out.length - 1].right = true; }
+      else if (c === 'l' || c === 'c' || c === 'r') push({ l: 'left', c: 'center', r: 'right' }[c]);
+      else if ('pmbX'.includes(c)) {
+        let width = '';
+        if (spec[i + 1] === '{') { const g = group(spec, i + 1); const m = LENGTH.exec(g.text); if (m) width = m[1] + m[2]; i = g.end - 1; }
+        push('left', { wrap: true, width });
+      }
       else if ((c === '@' || c === '!' || c === '>' || c === '<') && spec[i + 1] === '{') i = group(spec, i + 1).end - 1;
     }
     return out;
   }
 
-  const RULE = /^\s*\\(hline|toprule|midrule|bottomrule|cline\s*\{[^}]*\})/;
+  const RULE = /^\s*\\(hline|toprule|midrule|bottomrule|cline\s*\{([^}]*)\})/;
+  // Leading \hline / \cline{a-b} commands of a row: whether any were there, and which columns they span.
+  function rowRules(text) {
+    let rule = false, full = false;
+    const ranges = [];
+    for (let m; (m = RULE.exec(text)); ) {
+      rule = true; text = text.slice(m[0].length);
+      const range = m[2] !== undefined && /(\d+)\s*-\s*(\d+)/.exec(m[2]);
+      if (range) ranges.push([+range[1], +range[2]]); else full = true;
+    }
+    return { rule, full, ranges, rest: text };
+  }
+  const spans = (rules, col, span) => rules.full || rules.ranges.some(([a, b]) => col + 1 <= b && col + span >= a);
   function tabular(body, st) {
     const spec = reqArg(body, 0);
-    const aligns = columnAligns(spec.text);
-    const rows = tableRows(body.slice(spec.end));
-    let html = '', bottom = false;
-    rows.forEach((cells, r) => {
-      let rule = false;
-      let first = cells[0] || '';
-      for (let m; (m = RULE.exec(first)); ) { rule = true; first = first.slice(m[0].length); }
-      cells = [first, ...cells.slice(1)];
-      const last = r === rows.length - 1;
-      if (last && cells.length === 1 && !cells[0].replace(/\\(?:hline|toprule|midrule|bottomrule)/g, '').trim()) { bottom = bottom || rule || /\\(hline|bottomrule)/.test(cells[0]); return; }
-      let col = 0, tds = '';
+    const specs = columnSpecs(spec.text);
+    const blank = { align: 'left', left: false, right: false, wrap: false, width: '' };
+    const rows = [];
+    let bottom = null;
+    tableRows(body.slice(spec.end)).forEach((cells, r, all) => {
+      const rules = rowRules(cells[0] || '');
+      cells = [rules.rest, ...cells.slice(1)];
+      // Rules after the last \\ close the table: \hline under every column, \cline{a-b} under some.
+      if (r === all.length - 1 && cells.length === 1 && !cells[0].trim()) { if (rules.rule) bottom = rules; return; }
+      const row = { rule: rules.rule, cells: [] };
+      let col = 0;
       for (let cell of cells) {
         cell = cell.trim();
-        let span = 1, align = aligns[col] || 'left';
+        let span = 1, own = specs[col] || blank;
         const mc = /^\\multicolumn\s*(?=\{)/.exec(cell);
         if (mc) {
           const n = reqArg(cell, mc[0].length), sp = reqArg(cell, n.end), tx = reqArg(cell, sp.end);
           span = Math.max(1, parseInt(n.text, 10) || 1);
-          align = columnAligns(sp.text)[0] || align;
+          own = columnSpecs(sp.text)[0] || own;
           cell = tx.text;
         }
-        tds += `<td${span > 1 ? ` colspan="${span}"` : ''} style="text-align:${align}">${inline(cell.trim(), st)}</td>`;
+        row.cells.push({ col, span, spec: own, top: spans(rules, col, span), html: inline(cell.trim(), st) });
         col += span;
       }
-      html += `<tr${rule ? ' class="rule"' : ''}>${tds}</tr>`;
+      // A row with fewer cells than columns still gets the columns' rules, as in LaTeX.
+      for (; col < specs.length; col++) row.cells.push({ col, span: 1, spec: specs[col], top: spans(rules, col, 1), html: '' });
+      rows.push(row);
     });
-    return `<div class="tex-table-wrap"><table class="tex-table${bottom ? ' rule-bottom' : ''}"><tbody>${html}</tbody></table></div>`;
+    const html = rows.map((row, r) => `<tr${row.rule ? ' class="rule"' : ''}>${row.cells.map(cell => {
+      const s = cell.spec, under = r === rows.length - 1 && bottom && spans(bottom, cell.col, cell.span);
+      const cls = [cell.top && 'rt', under && 'rb', s.left && 'vl', s.right && 'vr', s.wrap && 'wrap'].filter(Boolean).join(' ');
+      return `<td${cls ? ` class="${cls}"` : ''}${cell.span > 1 ? ` colspan="${cell.span}"` : ''} style="text-align:${s.align}${s.width ? `;width:${s.width}` : ''}">${cell.html}</td>`;
+    }).join('')}</tr>`).join('');
+    return `<div class="tex-table-wrap"><table class="tex-table"><tbody>${html}</tbody></table></div>`;
   }
 
   function tableFloat(body, st) {
