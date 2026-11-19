@@ -174,6 +174,11 @@ test("paper mode exports page-marked text, metadata and highlights, and reads th
   const long=agent.exportPaper({text:"a".repeat(agent.MAX_PAPER_CHARS+10)});assert.match(long["paper.txt"],/Text truncated/);
   const prompt=agent.buildPaperPrompt("What is the main claim?",[],true);
   assert.match(prompt,/read-only/);assert.match(prompt,/annotations\.txt/);assert.match(prompt,/What is the main claim\?$/);
+  // Codex can only open files through its shell, so its prompt must allow read-only commands instead of forbidding them.
+  assert.match(prompt,/Do not run commands/);
+  const codexPrompt=agent.buildPaperPrompt("Q",[],false,[],"codex");
+  assert.ok(!/Do not run commands/.test(codexPrompt));assert.match(codexPrompt,/read-only shell commands/);
+  assert.ok(!/Do not run commands/.test(agent.buildPrompt("Q",[],[],{},"codex")));
   const ro=agent.commandLine("claude",{readOnly:true});
   assert.equal(ro[ro.indexOf("--tools")+1],"Read,Glob,Grep");assert.ok(!ro.join(" ").includes("Edit"));
   assert.ok(agent.commandLine("codex",{readOnly:true}).join(" ").includes('sandbox_mode="read-only"'));
