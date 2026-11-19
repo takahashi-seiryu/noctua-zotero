@@ -593,7 +593,7 @@ import sys,json,os
 req=sys.stdin.read()
 paper=open("paper.txt").read()
 tools=sys.argv[sys.argv.index("--tools")+1]
-print(json.dumps({"type":"result","subtype":"success","result":"PAPER-OK tools="+tools+" page2="+str("[Page 2]" in paper)+" claim="+str("48x faster" in paper)+" note="+str(os.path.exists("note.tex")),"session_id":"p1"}))
+print(json.dumps({"type":"result","subtype":"success","result":"PAPER-OK tools="+tools+" page2="+str("[Page 2]" in paper)+" claim="+str("48x faster" in paper)+" note="+str(os.path.exists("note.tex"))+"\\n\\n**Key claim**\\n\\n- \`paper.txt\` read\\n- energy $x_t^2$","session_id":"p1"}))
 `);
       await IOUtils.setPermissions(fake,0o755);
       Zotero.Prefs.set("extensions.noctua-notes.agent.claudePath",fake,true);
@@ -613,6 +613,10 @@ print(json.dumps({"type":"result","subtype":"success","result":"PAPER-OK tools="
       const answer=cd.getElementById("chat-log").textContent;
       assert(answer.includes("tools=Read,Glob,Grep")&&answer.includes("page2=True")&&answer.includes("claim=True")&&answer.includes("note=False"),"The assistant did not get the paper read-only: "+answer);
       assert(!cd.getElementById("chat-proposal")||cd.getElementById("chat-proposal").hidden,"A paper chat must not offer note edits");
+      // Replies are Markdown: bold, lists, code and KaTeX math render instead of showing raw markers.
+      {const reply=[...cd.querySelectorAll(".chat-msg.assistant")].pop();
+        assert(reply.classList.contains("md")&&reply.querySelector("strong")?.textContent==="Key claim"&&reply.querySelectorAll("li").length===2&&reply.querySelector("li code")?.textContent==="paper.txt"&&reply.querySelector(".md-math .katex"),"The reply's Markdown did not render: "+reply.innerHTML.slice(0,400));
+        assert(!/\*\*|`/.test(reply.textContent),"Raw Markdown markers are still visible: "+reply.textContent);}
       frame.remove();
       Zotero.Prefs.clear("extensions.noctua-notes.agent.claudePath",true);await IOUtils.remove(fake,{ignoreAbsent:true});
       result.passed.push("The paper assistant reads the PDF text through read-only tools and answers in the side-pane chat page");

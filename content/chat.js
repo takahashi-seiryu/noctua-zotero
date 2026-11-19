@@ -46,7 +46,14 @@ var NoctuaChat = {
     function bubble(kind, text, save = false) {
       const node = document.createElement("div");
       node.className = "chat-msg " + kind;
-      node.textContent = text;
+      // Assistant replies are Markdown (bold, lists, code, math); everything else stays plain text.
+      const markdown = kind === "assistant" && typeof NoctuaMarkdown !== "undefined";
+      if (markdown) {
+        try {
+          node.append(NoctuaMarkdown.render(document, text, {katex: window.katex, openURL: url => host.openURL?.(url)}));
+          node.classList.add("md");
+        } catch (error) { node.replaceChildren(); node.textContent = text; report?.(error); }
+      } else node.textContent = text;
       log.append(node);
       log.scrollTop = log.scrollHeight;
       if (save) record(kind, text);
