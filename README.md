@@ -33,7 +33,7 @@ The assistant needs the [Claude](https://docs.claude.com/en/docs/claude-code) or
 - **Assistant**: the note editor has a Claude/Codex chat that edits the note and can read the paper as reference.
   In the PDF reader, the **✨ Noctua Chat** button (below Zotero's yellow Notes button) opens a read-only chat about the
   paper: full text with page markers, metadata and your highlights. Model, reasoning level, Codex Fast mode, attachments,
-  `/` commands and `$` skills are supported.
+  `/` commands and `$` skills are supported. Replies render Markdown (headings, bold, lists, code, tables) and `$math$`.
 - **iPhone photos**: the 📱 button in the chat shows a QR code; scan it with the iPhone camera and every photo you take
   lands in the chat as an attachment (works with Claude and Codex). It runs over [Tailscale](https://tailscale.com),
   so both devices need Tailscale on the same tailnet; only tailnet devices can reach the temporary server, which needs the
